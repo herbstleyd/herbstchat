@@ -1,0 +1,23 @@
+name: Herbstchat Clients bauen
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Build
+        working-directory: client
+        run: python build.py
+      - name: macOS-App zippen
+        if: runner.os == 'macOS'
+        working-directory: client/dist
+        run: ditto -c -k --keepParent Herbstchat.app Herbstchat-macOS.zip && rm -rf Herbstchat.app Herbstchat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Herbstchat-${{ runner.os }}
+          path: client/dist/*

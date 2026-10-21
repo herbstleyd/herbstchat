@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Herbstchat
+Comment=Verschluesselter Messenger
+Exec=sh -c '"$HOME/Herbstchat/start-linux.sh"'
+Terminal=false
+Categories=Network;InstantMessaging;
