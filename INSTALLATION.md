@@ -8,6 +8,7 @@ Herbstchat ist ein privater Instant Messenger mit Ende-zu-Ende-Verschlüsselung,
 |---|---|---|
 | Server | `herbstchat-server_1.0.0_all.deb` | Debian Testing, arm64 und amd64 (x86_64) |
 | Client | Ordner `client/` | Windows 10/11, macOS 11+, alle Linux-Distributionen |
+| Android-App | `Herbstchat-1.0.0.apk` (Quellcode in `android/`) | Android 8.0 oder neuer (arm64, armv7, x86, x86_64) |
 
 ### Ports
 
@@ -289,6 +290,44 @@ Ergebnis:
 
 Hinweis für macOS: Die App ist nicht signiert. Beim ersten Öffnen musst du sie mit Rechtsklick → „Öffnen“ bestätigen.
 
+## Teil 3b: Android-App
+
+Die Android-App ist eine native App (Kotlin, Jetpack Compose). Sie nutzt dieselbe Verschlüsselung wie der Desktop-Client (libsodium: Argon2id, X25519, XSalsa20-Poly1305) und ist voll kompatibel: Ein Konto funktioniert auf PC und Handy, und Android- und Desktop-Nutzer können miteinander chatten.
+
+### Installieren
+
+1. `Herbstchat-1.0.0.apk` aufs Handy kopieren (USB, Cloud, E-Mail oder per Download).
+2. Die Datei antippen. Android fragt beim ersten Mal, ob Apps aus dieser Quelle installiert werden dürfen. Erlauben, zurück und „Installieren“ antippen.
+3. Herbstchat öffnen, Benachrichtigungen erlauben, anmelden oder registrieren.
+4. Beim ersten Verbinden den Zertifikat-Fingerabdruck bestätigen, genau wie am PC.
+
+Alternativ per ADB: `adb install Herbstchat-1.0.0.apk`
+
+### Besonderheiten am Handy
+
+- **Angemeldet bleiben:** Beim Anmelden ankreuzbar. Das Passwort wird nicht gespeichert. Gespeichert werden nur die daraus abgeleiteten Schlüssel, und die sind mit einem Hardware-Schlüssel aus dem Android-Keystore verschlüsselt. Nach einem Neustart meldet sich die App selbst wieder an.
+- **Nachrichten im Hintergrund:** Die App hält über einen Vordergrund-Dienst die Verbindung offen. Dafür steht eine unauffällige, dauerhafte Benachrichtigung „Herbstchat – Verbunden als …“ in der Leiste. Abschaltbar unter Einstellungen → Hintergrund.
+- **Akku-Optimierung:** Damit Nachrichten auch bei ausgeschaltetem Bildschirm sofort ankommen, unter Einstellungen → „Akku-Optimierung für Herbstchat abschalten“ tippen. Bei Xiaomi, Huawei, Samsung und ähnlichen zusätzlich in den Geräte-Einstellungen „Autostart“ bzw. „Keine Einschränkungen“ für Herbstchat setzen.
+- **Ton und Vibration** stellst du in den Android-Benachrichtigungseinstellungen ein (Link in den App-Einstellungen). Im Status „Beschäftigt“ gibt es keine Benachrichtigungen.
+- Der Chatverlauf liegt verschlüsselt im privaten App-Speicher und wird nicht in Android-Backups übernommen.
+
+### Selbst bauen
+
+```bash
+cd android
+./gradlew assembleRelease          # braucht JDK 17 und das Android SDK (ANDROID_HOME)
+```
+
+Ohne Signaturschlüssel wird mit dem Debug-Schlüssel signiert. Für Updates muss jede neue Version mit **demselben** Schlüssel signiert sein wie die installierte, sonst lehnt Android das Update ab. Den Release-Schlüssel (`herbstchat-release.jks`) daher gut aufbewahren:
+
+```bash
+export HC_KEYSTORE=/pfad/zu/herbstchat-release.jks
+export HC_KEYSTORE_PASSWORD='…'
+./gradlew assembleRelease          # Ergebnis: app/build/outputs/apk/release/app-release.apk
+```
+
+Der GitHub-Workflow baut die APK bei jedem Push automatisch mit (Artefakt „Herbstchat-Android“), sofern die Secrets `HC_KEYSTORE_B64` und `HC_KEYSTORE_PASSWORD` gesetzt sind.
+
 ## Teil 4: Erste Schritte für Benutzer
 
 1. Herbstchat starten. Der Server `chat.example.org`, Port `47474`, ist schon eingetragen.
@@ -327,6 +366,8 @@ Lokale Daten liegen hier (Chatverlauf verschlüsselt):
 | Admin-Website zeigt 403 | Du greifst nicht aus einem erlaubten Netz zu. `allowed_networks` prüfen. |
 | Linux-Client startet nicht (xcb-Fehler) | `sudo apt install libxcb-cursor0` |
 | Passwort vergessen | Kann wegen der Ende-zu-Ende-Verschlüsselung nicht zurückgesetzt werden. Neuen Account anlegen, den alten löscht der Admin. |
+| Android: Nachrichten kommen erst beim Öffnen der App | Akku-Optimierung für Herbstchat abschalten, „Im Hintergrund verbunden bleiben“ einschalten, bei manchen Herstellern Autostart erlauben |
+| Android: „App nicht installiert“ beim Update | Die neue APK ist mit einem anderen Schlüssel signiert. Alte App deinstallieren oder mit dem ursprünglichen Schlüssel neu bauen. |
 | E-Mails werden nicht versendet | `[smtp]` in `server.conf` ausfüllen, Dienst neu starten, Test-E-Mail über die Einstellungen senden |
 
 ## Dateien im Paket

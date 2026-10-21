@@ -33,3 +33,22 @@ jobs:
         with:
           name: Herbstchat-${{ runner.os }}
           path: client/dist/*
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - name: Signaturschlüssel
+        env: { KS: "${{ secrets.HC_KEYSTORE_B64 }}" }
+        run: if [ -n "$KS" ]; then echo "$KS" | base64 -d > "$RUNNER_TEMP/release.jks"; echo "HC_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"; fi
+      - name: APK bauen
+        working-directory: android
+        env: { HC_KEYSTORE_PASSWORD: "${{ secrets.HC_KEYSTORE_PASSWORD }}" }
+        run: ./gradlew assembleRelease --no-daemon && cp app/build/outputs/apk/release/app-release.apk Herbstchat-1.0.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Herbstchat-Android
+          path: android/Herbstchat-1.0.0.apk
