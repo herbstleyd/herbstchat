@@ -7,6 +7,8 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,6 +35,20 @@ jobs:
         with:
           name: Herbstchat-${{ runner.os }}
           path: client/dist/*
+      - name: Ans Release anhängen
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: client/dist
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          case "$RUNNER_OS" in
+            Windows) f=Herbstchat-Windows.exe; cp Herbstchat.exe "$f" ;;
+            macOS)   f=Herbstchat-macOS.zip ;;
+            Linux)   f=Herbstchat-Linux-x86_64; cp Herbstchat "$f" ;;
+          esac
+          for i in $(seq 1 60); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 20; done
+          gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+
 
   android:
     runs-on: ubuntu-latest
@@ -54,26 +70,17 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, android]
+    needs: [android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { path: art }
-      - name: Dateien vorbereiten
-        run: |
-          mkdir rel
-          cp art/Herbstchat-Android/*.apk rel/
-          cp art/Herbstchat-Windows/Herbstchat.exe rel/Herbstchat-Windows.exe
-          cp art/Herbstchat-macOS/Herbstchat-macOS.zip rel/
-          cp art/Herbstchat-Linux/Herbstchat rel/Herbstchat-Linux-x86_64
-          cp herbstchat-server_1.0.0_all.deb rel/
-          (cd rel && sha256sum * > SHA256SUMS.txt)
-          ls -la rel
-      - name: Release anlegen
+        with: { name: Herbstchat-Android, path: rel }
+      - name: Release anlegen (APK + Server)
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          gh release create "$GITHUB_REF_NAME" rel/* --title "Herbstchat ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md \
-            || gh release upload "$GITHUB_REF_NAME" rel/* --clobber
+          cp herbstchat-server_1.0.0_all.deb rel/
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then gh release upload "$GITHUB_REF_NAME" rel/* --clobber
+          else gh release create "$GITHUB_REF_NAME" rel/* --title "Herbstchat ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md; fi
