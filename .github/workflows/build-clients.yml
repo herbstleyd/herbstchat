@@ -13,6 +13,15 @@ jobs:
       - name: Build
         working-directory: client
         run: python build.py
+      - name: Selbsttest (Windows/Linux)
+        if: runner.os != 'macOS'
+        working-directory: client/dist
+        shell: bash
+        run: ./Herbstchat* --selftest
+      - name: Selbsttest (macOS)
+        if: runner.os == 'macOS'
+        working-directory: client/dist
+        run: ./Herbstchat.app/Contents/MacOS/Herbstchat --selftest
       - name: macOS-App zippen
         if: runner.os == 'macOS'
         working-directory: client/dist

@@ -999,6 +999,8 @@ entschlüsselt. Nicht einmal der Serverbetreiber kann sie lesen.</p>
 
 
 def main():
+    if "--selftest" in sys.argv:
+        nacl.public.PrivateKey.generate(); derive("selftest", b"0" * 16); print("selftest ok"); sys.exit(0)
     if hasattr(Qt, "AA_EnableHighDpiScaling"):
         pass
     app = QApplication(sys.argv)

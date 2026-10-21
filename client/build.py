@@ -3,7 +3,7 @@
    Windows: dist/Herbstchat.exe | macOS: dist/Herbstchat.app | Linux: dist/Herbstchat"""
 import subprocess, sys
 subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "pyinstaller"])
-args = ["--noconfirm", "--windowed", "--name", "Herbstchat", "--collect-submodules", "nacl",
+args = ["--noconfirm", "--windowed", "--name", "Herbstchat", "--collect-all", "nacl", "--hidden-import", "_cffi_backend", "--collect-binaries", "cffi",
         "--exclude-module", "PySide6.QtWebEngineCore", "--exclude-module", "PySide6.Qt3DCore",
         "--exclude-module", "PySide6.QtQuick", "--exclude-module", "PySide6.QtQml"]
 if sys.platform != "darwin":
