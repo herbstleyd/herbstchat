@@ -1,4 +1,4 @@
-# Herbstchat 1.0.0 – Installationsanleitung
+# Herbstchat 1.1.0 – Installationsanleitung
 
 Herbstchat ist ein privater Instant Messenger mit Ende-zu-Ende-Verschlüsselung, Offline-Nachrichten und einer Admin-Website, die nur im lokalen Netz erreichbar ist.
 
@@ -6,9 +6,9 @@ Herbstchat ist ein privater Instant Messenger mit Ende-zu-Ende-Verschlüsselung,
 
 | Komponente | Datei | Plattform |
 |---|---|---|
-| Server | `herbstchat-server_1.0.0_all.deb` | Debian Testing, arm64 und amd64 (x86_64) |
+| Server | `herbstchat-server_1.1.0_all.deb` | Debian Testing, arm64 und amd64 (x86_64) |
 | Client | Ordner `client/` | Windows 10/11, macOS 11+, alle Linux-Distributionen |
-| Android-App | `Herbstchat-1.0.0.apk` (Quellcode in `android/`) | Android 8.0 oder neuer (arm64, armv7, x86, x86_64) |
+| Android-App | `Herbstchat-1.1.0.apk` (Quellcode in `android/`) | Android 8.0 oder neuer (arm64, armv7, x86, x86_64) |
 
 ### Ports
 
@@ -46,16 +46,16 @@ sudo apt install python3 python3-aiohttp openssl
 
 ### 1.2 Paket installieren
 
-`herbstchat-server_1.0.0_all.deb` auf den Server kopieren, zum Beispiel mit `scp`:
+`herbstchat-server_1.1.0_all.deb` auf den Server kopieren, zum Beispiel mit `scp`:
 
 ```bash
-scp herbstchat-server_1.0.0_all.deb benutzer@<server-lan-ip>:~
+scp herbstchat-server_1.1.0_all.deb benutzer@<server-lan-ip>:~
 ```
 
 Auf dem Server:
 
 ```bash
-sudo apt install ./herbstchat-server_1.0.0_all.deb
+sudo apt install ./herbstchat-server_1.1.0_all.deb
 ```
 
 Das Paket ist `Architecture: all` (reines Python) und läuft deshalb auf **arm64 und amd64** gleichermaßen.
@@ -91,7 +91,7 @@ ss -ltnp | grep -E '47474|8088'           # lauscht der Server?
 Test aus dem LAN:
 
 ```bash
-curl -k https://<server-lan-ip>:47474/    # Antwort: "Herbstchat Server 1.0.0"
+curl -k https://<server-lan-ip>:47474/    # Antwort: "Herbstchat Server 1.1.0"
 ```
 
 ### 1.4 Router / Portweiterleitung
@@ -296,12 +296,12 @@ Die Android-App ist eine native App (Kotlin, Jetpack Compose). Sie nutzt dieselb
 
 ### Installieren
 
-1. `Herbstchat-1.0.0.apk` aufs Handy kopieren (USB, Cloud, E-Mail oder per Download).
+1. `Herbstchat-1.1.0.apk` aufs Handy kopieren (USB, Cloud, E-Mail oder per Download).
 2. Die Datei antippen. Android fragt beim ersten Mal, ob Apps aus dieser Quelle installiert werden dürfen. Erlauben, zurück und „Installieren“ antippen.
 3. Herbstchat öffnen, Benachrichtigungen erlauben, anmelden oder registrieren.
 4. Beim ersten Verbinden den Zertifikat-Fingerabdruck bestätigen, genau wie am PC.
 
-Alternativ per ADB: `adb install Herbstchat-1.0.0.apk`
+Alternativ per ADB: `adb install Herbstchat-1.1.0.apk`
 
 ### Besonderheiten am Handy
 
