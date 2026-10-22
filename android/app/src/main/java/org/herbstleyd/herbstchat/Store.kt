@@ -15,7 +15,7 @@ import javax.crypto.spec.GCMParameterSpec
 const val DEFAULT_SERVER = "chat.example.org"
 const val DEFAULT_PORT = 47474
 const val WEBSITE = "https://herbstleyd.org"
-const val VERSION = "1.0.0"
+const val VERSION = "1.1.0"
 
 class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -24,7 +24,7 @@ class Settings(ctx: Context) {
     var lastNick: String get() = p.getString("last_nick", "")!!; set(v) = p.edit().putString("last_nick", v).apply()
     var rememberNick by BoolPref(p, "remember_nick", true)
     var stayLoggedIn by BoolPref(p, "stay_logged_in", true)
-    var theme: String get() = p.getString("theme", "system")!!; set(v) = p.edit().putString("theme", v).apply()
+    var theme: String get() = p.getString("theme", "dunkel")!!; set(v) = p.edit().putString("theme", v).apply()
     var accent: String get() = p.getString("accent", "#c8641e")!!; set(v) = p.edit().putString("accent", v).apply()
     var fontScale: Float get() = p.getFloat("font_scale", 1f); set(v) = p.edit().putFloat("font_scale", v).apply()
     var showTime by BoolPref(p, "show_time", true)

@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
     QSoundEffect = None
 
 APP = "Herbstchat"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_SERVER = "chat.example.org"
 DEFAULT_PORT = 47474
 WEBSITE = "https://herbstleyd.org"
@@ -36,7 +36,7 @@ PINS_FILE = os.path.join(DATA_DIR, "server_pins.json")
 
 DEFAULTS = {
     "server": DEFAULT_SERVER, "port": DEFAULT_PORT, "last_nick": "", "remember_nick": True,
-    "font_family": "", "font_size": 11, "theme": "hell", "accent": "#c8641e", "show_time": True,
+    "font_family": "", "font_size": 11, "theme": "dunkel", "accent": "#c8641e", "show_time": True,
     "enter_sends": True, "compact": False,
     "sound_on": True, "sound_msg": True, "sound_sent": False, "sound_online": True, "volume": 70,
     "sound_dnd_busy": True,
@@ -418,6 +418,8 @@ class MainWindow(QMainWindow):
         self.profile = {"history": {}, "keys": {}, "unread": {}, "names": {}}
         self.current = None; self.pending = {}; self.pending_action = None
         self.manual_logout = False; self.typing_sent = 0; self.typing_from = {}
+        self.history_local_counter = 0
+        self.history_syncing = False
         self.setWindowTitle(APP); self.setWindowIcon(app_icon(self.settings["accent"])); self.resize(980, 660)
         self.build_ui(); self.build_tray(); self.apply_settings(save=False)
         self.reconnect_timer = QTimer(self, interval=5000, timeout=self.reconnect)
@@ -652,6 +654,32 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP, "Passwort erfolgreich geändert.")
         elif t == "email_ok":
             self.me["email"] = d["email"]; QMessageBox.information(self, APP, "E-Mail-Adresse geändert.")
+        elif t == "history_counter":
+            self.history_sync_counter = d["counter"]
+        elif t == "history_delta":
+            for entry in d.get("delta", []):
+                key = str(entry["contact_id"])
+                box = self.box(entry["contact_id"])
+                if box:
+                    try:
+                        obj = json.loads(box.decrypt(b64d(entry["blob"])))
+                        self.history(entry["contact_id"]).append(
+                            {"me": False, "text": obj.get("text", ""), "ts": entry["ts"]})
+                        last_key = key
+                        self.history_local_counter = entry["id"]
+                    except Exception:
+                        pass
+            self.save_profile()
+            if last_key and str(self.current) == last_key:
+                self.render_chat()
+            if self.history_syncing:
+                self.history_syncing = False
+                self._upload_local_history()
+        elif t == "history_uploaded":
+            self.conn.send({"t": "history_updated", "counter": self.history_local_counter})
+        elif t == "history_updated_ok":
+            self.history_local_counter = d["counter"]
+            self.save_profile()
         elif t == "user":
             self.add_known(d["user"], persist_contact=False)
 
@@ -664,6 +692,8 @@ class MainWindow(QMainWindow):
                 self.login_dlg.fail("Privater Schlüssel konnte nicht entschlüsselt werden."); return
             self.me = {"id": d["id"], "nick": d["nick"], "email": d["email"], "pubkey": d["pubkey"]}
             self.load_profile()
+            self.history_local_counter = len(self.profile.get("history", {}))
+            self.history_sync_counter = d.get("history_counter", 0)
             st = self.settings["start_status"]
             self.status_box.setCurrentIndex(["online", "away", "busy", "invisible"].index(st))
             self.pending_action = None
@@ -673,6 +703,10 @@ class MainWindow(QMainWindow):
         for c in d["contacts"]:
             self.add_known(c)
         self.update_me(); self.refresh_contacts(); self.set_chat_enabled(self.current is not None)
+        self.history_sync_counter = d.get("history_counter", 0)
+        if self.history_sync_counter:
+            self.history_syncing = True
+            self.conn.send({"t": "history_delta", "since": self.history_local_counter, "user_id": d["id"]})
         if first and not self.settings["start_minimized"]:
             self.show_normal()
         elif first and self.tray:
@@ -687,6 +721,22 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP} - {self.me['nick']}" if self.me else APP)
 
     # ---- profile (lokal, verschlüsselt)
+    def _upload_local_history(self):
+        entries = []
+        for cid, msgs in self.profile["history"].items():
+            contact_id = int(cid)
+            pk = self.profile["keys"].get(cid)
+            if not pk: continue
+            box = self.box(contact_id)
+            if not box: continue
+            for m in msgs:
+                payload = b64e(box.encrypt(json.dumps({"text": m.get("text", ""), "ts": m.get("ts", time.time())}).encode()))
+                entries.append({"contact_id": contact_id, "blob": payload, "ts": m.get("ts", time.time())})
+        if entries:
+            self.conn.send({"t": "history_upload", "entries": entries})
+        else:
+            self.conn.send({"t": "history_updated", "counter": self.history_local_counter})
+
     def profile_path(self):
         return os.path.join(DATA_DIR, f"profile_{self.me['id']}_{self.settings['server']}.dat")
 

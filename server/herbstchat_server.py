@@ -15,7 +15,7 @@ import ipaddress, json, logging, os, re, secrets, smtplib, sqlite3, ssl, sys, ti
 from email.message import EmailMessage
 from aiohttp import web, WSMsgType
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_CONF = "/etc/herbstchat/server.conf"
 log = logging.getLogger("herbstchat")
 
@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, sender
   recipient INTEGER, payload TEXT, ts REAL);
 CREATE INDEX IF NOT EXISTS idx_msg_rcpt ON messages(recipient);
 CREATE TABLE IF NOT EXISTS auditlog(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, text TEXT);
+CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL, contact_id INTEGER NOT NULL,
+  blob TEXT NOT NULL, ts REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, id);
 """
 
 
@@ -265,9 +269,10 @@ class ChatServer:
             contacts = [self.contact_obj(r) for r in db.all(
                 "SELECT u.* FROM contacts c JOIN users u ON u.id=c.contact WHERE c.owner=? ORDER BY u.nick", (uid,))]
             motd = db.one("SELECT v FROM meta WHERE k='motd'")
+            hcnt = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
             await self.send(ws, {"t": "login_ok", "id": uid, "nick": u["nick"], "email": u["email"],
-                                 "pubkey": u["pubkey"], "enc_priv": u["enc_priv"], "contacts": contacts,
-                                 "motd": motd["v"] if motd else ""})
+                                  "pubkey": u["pubkey"], "enc_priv": u["enc_priv"], "contacts": contacts,
+                                  "motd": motd["v"] if motd else "", "history_counter": hcnt})
             await self.broadcast_presence(uid)
             for r in db.all("SELECT m.*, u.nick, u.pubkey FROM messages m LEFT JOIN users u ON u.id=m.sender "
                             "WHERE recipient=? ORDER BY m.id", (uid,)):
@@ -302,6 +307,7 @@ class ChatServer:
             now = time.time()
             cur = db.x("INSERT INTO messages(sender,recipient,payload,ts) VALUES(?,?,?,?)", (uid, to, payload, now))
             db.x("UPDATE users SET msg_count=msg_count+1 WHERE id=?", (uid,))
+            db.x("INSERT INTO history(user_id, contact_id, blob, ts) VALUES(?,?,?,?)", (to, uid, payload, now))
             mid = cur.lastrowid
             # Absender automatisch beim Empfänger als Kontakt "bekannt machen"
             await self.send_user(to, {"t": "msg", "id": mid, "from": uid, "from_nick": u["nick"],
@@ -361,6 +367,30 @@ class ChatServer:
                 await self.send(ws, {"t": "error", "ctx": "email", "msg": "Ungültige E-Mail-Adresse."}); return
             db.x("UPDATE users SET email=? WHERE id=?", (email, uid))
             await self.send(ws, {"t": "email_ok", "email": email})
+        elif t == "history_counter":
+            cnt = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
+            await self.send(ws, {"t": "history_counter", "counter": cnt})
+        elif t == "history_delta":
+            since = int(d.get("since", 0))
+            rows = db.all("SELECT * FROM history WHERE user_id=? AND id>? ORDER BY id", (uid, since))
+            await self.send(ws, {"t": "history_delta", "delta": [{"id": r["id"], "contact_id": r["contact_id"],
+                          "blob": r["blob"], "ts": r["ts"]} for r in rows]})
+        elif t == "history_upload":
+            for entry in d.get("entries", []):
+                try:
+                    cid = int(entry["contact_id"])
+                    blob = str(entry["blob"])[:65536]
+                    ts = float(entry.get("ts", time.time()))
+                    assert db.one("SELECT 1 FROM users WHERE id=?", (cid,))
+                except (ValueError, KeyError, AssertionError):
+                    continue
+                db.x("INSERT INTO history(user_id, contact_id, blob, ts) VALUES(?,?,?,?)",
+                     (uid, cid, blob, ts))
+            await self.send(ws, {"t": "history_uploaded"})
+        elif t == "history_updated":
+            cnt = int(d.get("counter", 0))
+            cur = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
+            await self.send(ws, {"t": "history_updated_ok", "counter": cur})
         elif t == "ping":
             await self.send(ws, {"t": "pong"})
 
