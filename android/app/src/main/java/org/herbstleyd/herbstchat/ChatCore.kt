@@ -518,7 +518,9 @@ object ChatCore : Connection.Listener {
         for (i in 0 until delta.length()) {
             val entry = delta.getJSONObject(i)
             val cid = entry.getInt("contact_id")
-            val pk = keys().optString(cid.toString()).ifEmpty { continue }
+            val pkRaw = keys().optString(cid.toString())
+            if (pkRaw.isEmpty()) continue
+            val pk = pkRaw
             val payload = Crypto.b64d(entry.getString("blob"))
             try {
                 val body = Crypto.boxDecrypt(priv!! , Crypto.b64d(pk), payload)
