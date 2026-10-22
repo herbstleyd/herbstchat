@@ -15,7 +15,7 @@ import ipaddress, json, logging, os, re, secrets, smtplib, sqlite3, ssl, sys, ti
 from email.message import EmailMessage
 from aiohttp import web, WSMsgType
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 DEFAULT_CONF = "/etc/herbstchat/server.conf"
 log = logging.getLogger("herbstchat")
 
@@ -419,7 +419,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px 10px
 th{background:#fafafa;font-weight:600;font-size:13px;text-transform:uppercase;color:var(--muted);letter-spacing:.3px}
 tr:hover td{background:#f8f7ff}
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;color:#fff;letter-spacing:.3px}
-.b-on{background:var(--success)}.b-off{background:#b2bec3}.b-ban{background:var(--danger)}.b-to{background:#e17055}.b-mu{background:6c5ce7}
+.b-on{background:var(--success)}.b-off{background:#b2bec3}.b-ban{background:var(--danger)}.b-to{background:#e17055}.b-mu{background:#6c5ce7}
 input,select,textarea{font:inherit;padding:8px 12px;border:1px solid #dcdde1;border-radius:8px;outline:none;transition:border .2s}
 input:focus,select:focus,textarea:focus{border-color:var(--primary)}
 button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:500;transition:background .2s}
@@ -496,10 +496,10 @@ class AdminSite:
 
     def badges(self, u):
         b = []
-        b.append('<span class="b on">online</span>' if u["id"] in self.chat.online else '<span class="b off">offline</span>')
-        if u["banned"]: b.append('<span class="b ban">gebannt</span>')
-        if u["timeout_until"] and u["timeout_until"] > time.time(): b.append('<span class="b to">Timeout</span>')
-        if u["muted"]: b.append('<span class="b mu">stumm</span>')
+        b.append('<span class="b b-on">online</span>' if u["id"] in self.chat.online else '<span class="b b-off">offline</span>')
+        if u["banned"]: b.append('<span class="b b-ban">gebannt</span>')
+        if u["timeout_until"] and u["timeout_until"] > time.time(): b.append('<span class="b b-to">Timeout</span>')
+        if u["muted"]: b.append('<span class="b b-mu">stumm</span>')
         return " ".join(b)
 
     async def dashboard(self, request):
