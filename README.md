@@ -11,7 +11,7 @@
    Eigener Server | Windows | macOS | Linux | Android
 ```
 
-[![Release](https://img.shields.io/github/v/release/herbstleyd/herbstchat?label=Version&color=c8641e)](https://github.com/herbstleyd/herbstchat/releases/latest)
+[![Release](https://img.shields.io/github/v/release/herbstleyd/herbstchat?label=Version&color=0066cc)](https://github.com/herbstleyd/herbstchat/releases/latest)
 ![Plattformen](https://img.shields.io/badge/Plattformen-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-555)
 ![Verschlüsselung](https://img.shields.io/badge/E2EE-X25519%20%2B%20XSalsa20--Poly1305-3bb54a)
 [![Lizenz](https://img.shields.io/badge/Lizenz-0BSD-blue)](LICENSE)
@@ -148,7 +148,7 @@ Im Router muss nur **TCP-Port 47474** an den Server weitergeleitet werden. Den A
 ### 2. App starten und Konto anlegen
 
 1. App starten (Windows: Doppelklick auf die `.exe`, Linux: `chmod +x` und starten, macOS: ZIP entpacken und App öffnen).
-2. Serveradresse und Port eintragen (Standard: `chat.example.org:47474`).
+2. Adresse deines Servers (Domain, DynDNS-Name oder IP) und Port eintragen (Standard-Port: `47474`). Eine Serveradresse ist nicht voreingestellt.
 3. Auf **Registrieren** wechseln, E-Mail, Nickname und ein **gutes Passwort** eingeben.
 4. Beim ersten Verbinden wird der Zertifikat-Fingerabdruck angezeigt. Mit dem Wert vom Server vergleichen und bestätigen.
 5. Über **Kontakt hinzufügen** (Strg+N) Freunde per Nickname suchen und losschreiben.
@@ -360,6 +360,7 @@ Der Server ist ein einzelnes Python-Programm (`server/herbstchat_server.py`) auf
 [server]
 host = 0.0.0.0
 port = 47474
+# eigene Domain/DynDNS/IP, nur zur Anzeige und fuer das Zertifikat
 public_address = chat.example.org
 
 [admin]

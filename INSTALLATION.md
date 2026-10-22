@@ -29,7 +29,8 @@ sudo apt install ./herbstchat-server_*_all.deb
 ### 1.3 Zertifikat und Konfiguration
 
 1. **TLS-Zertifikat:** Wird bei der Installation selbstsigniert erzeugt (`/etc/herbstchat/cert.pem`, Fingerabdruck in `/etc/herbstchat/zertifikat-fingerabdruck.txt`).
-2. **Admin-Passwort ändern** (optional):
+2. **Öffentliche Adresse eintragen** (optional): In `/etc/herbstchat/server.conf` unter `public_address` deine Domain bzw. deinen DynDNS-Namen eintragen. Sie wird in der Admin-Oberfläche angezeigt und, wenn sie schon vor der Installation gesetzt ist, als Name im Zertifikat verwendet.
+3. **Admin-Passwort ändern** (optional):
 ```bash
 sudo herbstchat-server --set-admin-password
 ```
@@ -86,7 +87,7 @@ Die Android-App (`Herbstchat-<VERSION>.apk`) ist eine native Kotlin-App und nutz
 ### 1.7 Erste Schritte & Konto-Setup
 
 1. Starte Herbstchat auf deinem Endgerät.
-2. Der Server ist standardmäßig auf `chat.example.org:47474` eingestellt. Passe dies an, falls du eine andere IP oder Domain nutzt.
+2. Trage die Adresse deines Servers ein (Domain, DynDNS-Name oder IP), der Port ist standardmäßig `47474`. Eine Serveradresse ist nicht voreingestellt.
 3. Gib deine E-Mail, einen Namen (Nickname) und ein sicheres Passwort ein.
 4. Beim ersten Verbinden siehst du den Zertifikats-Fingerabdruck des Servers. Vergleiche ihn ggf. mit `cat /etc/herbstchat/zertifikat-fingerabdruck.txt` und bestätige ihn.
 

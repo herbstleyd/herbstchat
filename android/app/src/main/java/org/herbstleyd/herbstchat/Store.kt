@@ -12,7 +12,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-const val DEFAULT_SERVER = "chat.example.org"
+const val DEFAULT_SERVER = ""   // eigene Serveradresse beim ersten Start eintragen
 const val DEFAULT_PORT = 47474
 const val WEBSITE = "https://herbstleyd.org"
 const val VERSION = "1.1.2"
@@ -25,7 +25,7 @@ class Settings(ctx: Context) {
     var rememberNick by BoolPref(p, "remember_nick", true)
     var stayLoggedIn by BoolPref(p, "stay_logged_in", true)
     var theme: String get() = p.getString("theme", "dunkel")!!; set(v) = p.edit().putString("theme", v).apply()
-    var accent: String get() = p.getString("accent", "#c8641e")!!; set(v) = p.edit().putString("accent", v).apply()
+    var accent: String get() = p.getString("accent", ACCENT_DEFAULT)!!.let { if (it in ACCENTS.values) it else ACCENT_DEFAULT }; set(v) = p.edit().putString("accent", v).apply()
     var fontScale: Float get() = p.getFloat("font_scale", 1f); set(v) = p.edit().putFloat("font_scale", v).apply()
     var showTime by BoolPref(p, "show_time", true)
     var compact by BoolPref(p, "compact", false)

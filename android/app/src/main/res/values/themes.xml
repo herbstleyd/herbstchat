@@ -1,6 +1,6 @@
 <resources>
     <style name="Theme.Herbstchat" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#c8641e</item>
-        <item name="android:windowBackground">#1F2124</item>
+        <item name="android:statusBarColor">#0066cc</item>
+        <item name="android:windowBackground">#16191E</item>
     </style>
 </resources>

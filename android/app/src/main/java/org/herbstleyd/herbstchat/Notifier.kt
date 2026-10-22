@@ -46,7 +46,7 @@ object Notifier {
         try { NotificationManagerCompat.from(ctx).notify(id, b.build()) } catch (_: SecurityException) {}
     }
 
-    private fun color(): Int = try { android.graphics.Color.parseColor(ChatCore.settings.accent) } catch (_: Exception) { 0xFFC8641E.toInt() }
+    private fun color(): Int = try { android.graphics.Color.parseColor(ChatCore.settings.accent) } catch (_: Exception) { 0xFF0066CC.toInt() }
 
     fun message(ctx: Context, from: Int, nick: String, text: String) {
         val preview = if (ChatCore.settings.notifyPreview) text.take(300) else "Neue Nachricht"

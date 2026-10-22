@@ -57,8 +57,9 @@ import java.util.Date
 import java.util.Locale
 
 val EMOJIS = "😀 😂 😊 😍 😘 😎 🤔 😅 😢 😭 😡 👍 👎 👋 🙏 👏 💪 ❤️ 💔 🔥 🎉 🍂 🍁 ☕ 🍺 🎂 🌞 🌧️ ⭐ ✅ ❌ ❓".split(" ")
-val ACCENTS = linkedMapOf("Herbst-Orange" to "#c8641e", "Ahorn-Rot" to "#b83b3b", "Waldgrün" to "#3d8b4f",
-    "Himmelblau" to "#2f7fc1", "Violett" to "#7d4fb3", "ICQ-Grün" to "#5fae3b")
+const val ACCENT_DEFAULT = "#0066cc"
+val ACCENTS = linkedMapOf("Herbstchat-Blau" to "#0066cc", "Himmelblau" to "#2f9bd8", "Petrol" to "#00838f",
+    "Waldgrün" to "#3d8b4f", "Violett" to "#6a4fc8", "Ahorn-Rot" to "#c0392b")
 
 fun hexColor(s: String) = Color(android.graphics.Color.parseColor(s))
 
@@ -70,13 +71,13 @@ fun HerbstTheme(content: @Composable () -> Unit) {
     val dark = when (s.theme) { "dunkel" -> true; "hell" -> false; else -> isSystemInDarkTheme() }
     val a = hexColor(s.accent)
     val scheme = if (dark) darkColorScheme(primary = a, onPrimary = Color.White, secondary = a,
-        background = Color(0xFF1F2124), surface = Color(0xFF1F2124), surfaceVariant = Color(0xFF33363B),
-        surfaceContainer = Color(0xFF2A2D31), onBackground = Color(0xFFE8E8E8), onSurface = Color(0xFFE8E8E8),
+        background = Color(0xFF16191E), surface = Color(0xFF16191E), surfaceVariant = Color(0xFF262C34),
+        surfaceContainer = Color(0xFF1F242B), onBackground = Color(0xFFE6E9EE), onSurface = Color(0xFFE6E9EE),
         primaryContainer = a.copy(alpha = .35f), onPrimaryContainer = Color.White)
     else lightColorScheme(primary = a, onPrimary = Color.White, secondary = a,
-        background = Color(0xFFF6F3EF), surface = Color(0xFFF6F3EF), surfaceVariant = Color(0xFFEFE9E1),
-        surfaceContainer = Color(0xFFFFFFFF), onBackground = Color(0xFF262626), onSurface = Color(0xFF262626),
-        primaryContainer = a.copy(alpha = .18f), onPrimaryContainer = Color(0xFF262626))
+        background = Color(0xFFEEF2F7), surface = Color(0xFFEEF2F7), surfaceVariant = Color(0xFFE1E8F1),
+        surfaceContainer = Color(0xFFFFFFFF), onBackground = Color(0xFF1C2430), onSurface = Color(0xFF1C2430),
+        primaryContainer = a.copy(alpha = .18f), onPrimaryContainer = Color(0xFF1C2430))
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * s.fontScale)) {
         MaterialTheme(colorScheme = scheme, content = content)
@@ -154,14 +155,14 @@ fun LoginScreen(openSettings: () -> Unit) {
     var rpw2 by remember { mutableStateOf("") }
     var server by remember { mutableStateOf(s.server) }
     var port by remember { mutableStateOf(s.port.toString()) }
-    var showServer by remember { mutableStateOf(false) }
+    var showServer by remember { mutableStateOf(s.server.isBlank()) }
     var localErr by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(c.registeredNick) { c.registeredNick?.let { nick = it; tab = 0; c.registeredNick = null } }
 
     fun applyServer(): Boolean {
         val p = port.toIntOrNull()
-        if (server.isBlank() || p == null || p !in 1..65535) { localErr = "Bitte gültigen Server und Port angeben."; return false }
+        if (server.isBlank() || p == null || p !in 1..65535) { localErr = if (server.isBlank()) "Bitte zuerst die Adresse deines Herbstchat-Servers eintragen." else "Bitte gültigen Server und Port angeben."; showServer = true; return false }
         s.server = server.trim(); s.port = p; return true
     }
 
@@ -232,10 +233,10 @@ fun LoginScreen(openSettings: () -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         TextButton({ showServer = !showServer }) {
-            Icon(Icons.Default.Dns, null); Spacer(Modifier.width(6.dp)); Text("Server: ${s.server}:${s.port}")
+            Icon(Icons.Default.Dns, null); Spacer(Modifier.width(6.dp)); Text(if (s.server.isBlank()) "Server eintragen" else "Server: ${s.server}:${s.port}")
         }
         if (showServer) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(server, { server = it }, label = { Text("Server") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(server, { server = it }, label = { Text("Server") }, placeholder = { Text("z. B. chat.example.org") }, singleLine = true, modifier = Modifier.weight(1f))
             OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text("Port") }, singleLine = true,
                 modifier = Modifier.width(100.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
@@ -537,7 +538,7 @@ fun Bubble(m: Msg, accent: Color) {
     val s = ChatCore.settings
     val pad = if (s.compact) 6.dp else 10.dp
     if (m.sys) {
-        Text(m.text, Modifier.fillMaxWidth().padding(6.dp), textAlign = TextAlign.Center, color = Color(0xFFE67E22))
+        Text(m.text, Modifier.fillMaxWidth().padding(6.dp), textAlign = TextAlign.Center, color = Color(0xFF4DA3FF))
         return
     }
     val time = if (s.showTime) timeFmt.format(Date((m.ts * 1000).toLong())) else ""

@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover
 
 APP = "Herbstchat"
 VERSION = "1.1.2"
-DEFAULT_SERVER = "chat.example.org"
+DEFAULT_SERVER = ""          # eigene Serveradresse beim ersten Start eintragen
 DEFAULT_PORT = 47474
 WEBSITE = "https://herbstleyd.org"
 
@@ -34,9 +34,12 @@ os.makedirs(DATA_DIR, exist_ok=True)
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 PINS_FILE = os.path.join(DATA_DIR, "server_pins.json")
 
+ACCENT_DEFAULT = "#0066cc"
+ACCENTS = {"Herbstchat-Blau": "#0066cc", "Himmelblau": "#2f9bd8", "Petrol": "#00838f",
+           "Waldgrün": "#3d8b4f", "Violett": "#6a4fc8", "Ahorn-Rot": "#c0392b"}
 DEFAULTS = {
     "server": DEFAULT_SERVER, "port": DEFAULT_PORT, "last_nick": "", "remember_nick": True,
-    "font_family": "", "font_size": 11, "theme": "dunkel", "accent": "#c8641e", "show_time": True,
+    "font_family": "", "font_size": 11, "theme": "dunkel", "accent": ACCENT_DEFAULT, "show_time": True,
     "enter_sends": True, "compact": False,
     "sound_on": True, "sound_msg": True, "sound_sent": False, "sound_online": True, "volume": 70,
     "sound_dnd_busy": True,
@@ -104,7 +107,7 @@ def make_sounds():
             "notice": tone("notice.wav", [(440, .2), (0, .05), (440, .2)])}
 
 
-def app_icon(color="#c8641e"):
+def app_icon(color=ACCENT_DEFAULT):
     pm = QPixmap(64, 64); pm.fill(Qt.transparent)
     p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing)
     p.setBrush(QColor(color)); p.setPen(Qt.NoPen); p.drawRoundedRect(2, 2, 60, 60, 16, 16)
@@ -128,8 +131,8 @@ def dot_icon(color, unread=0):
 def stylesheet(s):
     dark = s["theme"] == "dunkel"
     a = s["accent"]
-    bg, panel, text, border, inp = (("#1f2124", "#2a2d31", "#e8e8e8", "#3a3d42", "#33363b") if dark else
-                                    ("#f6f3ef", "#ffffff", "#262626", "#e2ddd6", "#ffffff"))
+    bg, panel, text, border, inp = (("#16191e", "#1f242b", "#e6e9ee", "#2f3640", "#262c34") if dark else
+                                    ("#eef2f7", "#ffffff", "#1c2430", "#d5dde8", "#ffffff"))
     fam = f"font-family:'{s['font_family']}';" if s["font_family"] else ""
     return f"""
     * {{ {fam} font-size:{s['font_size']}pt; color:{text}; }}
@@ -144,7 +147,7 @@ def stylesheet(s):
     QPushButton[flat="true"], QToolButton {{ background:transparent; color:{text}; border:1px solid {border}; border-radius:8px; padding:5px 9px; }}
     QListWidget::item {{ padding:8px; border-radius:8px; }}
     QListWidget::item:selected {{ background:{a}; color:white; }}
-    QListWidget::item:hover:!selected {{ background:{QColor(a).lighter(180).name() if not dark else '#3a3d42'}; }}
+    QListWidget::item:hover:!selected {{ background:{QColor(a).lighter(185).name() if not dark else '#2a323d'}; }}
     QTabWidget::pane {{ border:1px solid {border}; border-radius:8px; background:{panel}; }}
     QTabBar::tab {{ padding:8px 14px; background:transparent; }}
     QTabBar::tab:selected {{ border-bottom:3px solid {a}; font-weight:600; }}
@@ -246,7 +249,7 @@ class LoginDialog(QDialog):
         self.tabs.addTab(w, "Registrieren")
         # Server
         h = QHBoxLayout()
-        self.srv = QLineEdit(self.s["server"]); self.prt = QSpinBox(); self.prt.setRange(1, 65535)
+        self.srv = QLineEdit(self.s["server"]); self.srv.setPlaceholderText("Serveradresse, z. B. chat.example.org"); self.prt = QSpinBox(); self.prt.setRange(1, 65535)
         self.prt.setValue(int(self.s["port"]))
         h.addWidget(QLabel("Server:")); h.addWidget(self.srv, 1); h.addWidget(self.prt); lay.addLayout(h)
         self.status = QLabel(""); self.status.setWordWrap(True); self.status.setObjectName("muted"); lay.addWidget(self.status)
@@ -261,6 +264,7 @@ class LoginDialog(QDialog):
     def _server(self):
         self.s["server"], self.s["port"] = self.srv.text().strip(), self.prt.value()
         self.win.save_settings()
+        return bool(self.s["server"])
 
     def do_login(self):
         nick, pw = self.l_nick.text().strip(), self.l_pw.text()
@@ -268,7 +272,9 @@ class LoginDialog(QDialog):
             return self.status.setText("Bitte Nickname und Passwort eingeben.")
         self.s["remember_nick"] = self.l_remember.isChecked()
         self.s["last_nick"] = nick if self.l_remember.isChecked() else ""
-        self._server(); self.busy(True, "Verbinde ...")
+        if not self._server():
+            self.srv.setFocus(); return self.status.setText("Bitte zuerst die Adresse deines Herbstchat-Servers eintragen.")
+        self.busy(True, "Verbinde ...")
         self.win.start_login(nick, pw, self)
 
     def do_register(self):
@@ -281,7 +287,9 @@ class LoginDialog(QDialog):
             return self.status.setText("Das Passwort muss mindestens 6 Zeichen lang sein.")
         if pw != self.r_pw2.text():
             return self.status.setText("Die Passwörter stimmen nicht überein.")
-        self._server(); self.busy(True, "Erzeuge Schlüssel und registriere ...")
+        if not self._server():
+            self.srv.setFocus(); return self.status.setText("Bitte zuerst die Adresse deines Herbstchat-Servers eintragen.")
+        self.busy(True, "Erzeuge Schlüssel und registriere ...")
         self.win.start_register(mail, nick, pw, self)
 
     def fail(self, msg):
@@ -311,8 +319,7 @@ class OptionsDialog(QDialog):
         fs = QSpinBox(); fs.setRange(8, 24); fs.setValue(s["font_size"]); fs.setSuffix(" pt"); self.w["font_size"] = fs
         th = QComboBox(); th.addItems(["hell", "dunkel"]); th.setCurrentText(s["theme"]); self.w["theme"] = th
         ac = QComboBox()
-        self.accents = {"Herbst-Orange": "#c8641e", "Ahorn-Rot": "#b83b3b", "Waldgrün": "#3d8b4f",
-                        "Himmelblau": "#2f7fc1", "Violett": "#7d4fb3", "ICQ-Grün": "#5fae3b"}
+        self.accents = dict(ACCENTS)
         ac.addItems(list(self.accents)); self.w["accent"] = ac
         for k, v in self.accents.items():
             if v == s["accent"]: ac.setCurrentText(k)
@@ -353,7 +360,7 @@ class OptionsDialog(QDialog):
         ss = QComboBox(); [ss.addItem(STATUS[k][0], k) for k in ("online", "away", "busy", "invisible")]
         ss.setCurrentIndex(["online", "away", "busy", "invisible"].index(s["start_status"])); self.w["start_status"] = ss
         f.addRow("Status beim Anmelden:", ss)
-        srv = QLineEdit(s["server"]); self.w["server"] = srv
+        srv = QLineEdit(s["server"]); srv.setPlaceholderText("z. B. chat.example.org"); self.w["server"] = srv
         prt = QSpinBox(); prt.setRange(1, 65535); prt.setValue(int(s["port"])); self.w["port"] = prt
         f.addRow("Server:", srv); f.addRow("Port:", prt)
         rp = QPushButton("Server-Vertrauen zurücksetzen"); rp.setProperty("flat", True)
@@ -410,6 +417,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = dict(DEFAULTS); self.settings.update(load_json(SETTINGS_FILE, {}))
+        if self.settings.get("accent") not in ACCENTS.values():   # z. B. altes Herbst-Orange
+            self.settings["accent"] = ACCENT_DEFAULT
         self.sounds = make_sounds(); self.effects = {}
         self.conn = Connection(self)
         self.conn.message.connect(self.on_msg); self.conn.state.connect(self.on_state)
@@ -999,10 +1008,10 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "view"): return
         if self.current is None:
             self.view.setHtml("<div style='color:#888;text-align:center;margin-top:80px'>"
-                              "<h2>Willkommen bei Herbstchat 🍂</h2><p>Wähle links einen Kontakt oder füge einen neuen hinzu.</p></div>")
+                              "<h2>Willkommen bei Herbstchat</h2><p>Wähle links einen Kontakt oder füge einen neuen hinzu.</p></div>")
             return
         dark = self.settings["theme"] == "dunkel"; a = self.settings["accent"]
-        other_bg = "#3a3d42" if dark else "#efe9e1"; txt = "#e8e8e8" if dark else "#262626"
+        other_bg = "#2c333d" if dark else "#e3eaf3"; txt = "#e6e9ee" if dark else "#1c2430"
         pad = 4 if self.settings["compact"] else 8
         out, last_day = [], None
         nick = self.profile["names"].get(str(self.current), "")
@@ -1012,7 +1021,7 @@ class MainWindow(QMainWindow):
             if day != last_day:
                 out.append(f"<p align=center style='color:#999;font-size:small'>— {day} —</p>"); last_day = day
             if m.get("sys"):
-                out.append(f"<p align=center style='color:#e67e22'>{html.escape(m['text'])}</p>"); continue
+                out.append(f"<p align=center style='color:#4da3ff'>{html.escape(m['text'])}</p>"); continue
             body = html.escape(m["text"]).replace("\n", "<br>")
             import re
             body = re.sub(r"(https?://[^\s<]+)", r"<a href='\1' style='color:inherit'>\1</a>", body)
@@ -1021,7 +1030,7 @@ class MainWindow(QMainWindow):
                 tick = {"sending": "⏳", "sent": "✓", "queued": "✉ (zugestellt sobald online)", "failed": "⚠"}.get(m.get("state"), "✓")
                 out.append(f"""<table width=100% cellspacing=0 cellpadding=0 style='margin:2px 0'><tr><td width=25%></td>
 <td align=right><table cellpadding={pad} style='background:{a};border-radius:10px'><tr><td style='color:white'>{body}
-<br><span style='font-size:small;color:#ffe9d6'>{tm} {tick}</span></td></tr></table></td></tr></table>""")
+<br><span style='font-size:small;color:#d6e8ff'>{tm} {tick}</span></td></tr></table></td></tr></table>""")
             else:
                 out.append(f"""<table width=100% cellspacing=0 cellpadding=0 style='margin:2px 0'><tr>
 <td align=left><table cellpadding={pad} style='background:{other_bg}'><tr><td style='color:{txt}'>

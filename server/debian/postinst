@@ -6,10 +6,15 @@ if [ "$1" = "configure" ]; then
   mkdir -p /var/lib/herbstchat
   chown herbstchat:herbstchat /var/lib/herbstchat; chmod 750 /var/lib/herbstchat
   if [ ! -f /etc/herbstchat/cert.pem ]; then
-    echo "Herbstchat: erzeuge TLS-Zertifikat fuer chat.example.org ..."
+    # Name fuer das Zertifikat: public_address aus server.conf, sonst Rechnername
+    CN=$(sed -n 's/^[[:space:]]*public_address[[:space:]]*=[[:space:]]*//p' /etc/herbstchat/server.conf 2>/dev/null | head -n1 | tr -d '[:space:]')
+    [ -n "$CN" ] || CN=$(hostname -f 2>/dev/null || hostname)
+    [ -n "$CN" ] || CN=herbstchat
+    if echo "$CN" | grep -qE '^[0-9.]+$|:'; then SAN="IP:$CN"; else SAN="DNS:$CN"; fi
+    echo "Herbstchat: erzeuge TLS-Zertifikat fuer $CN ..."
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
       -keyout /etc/herbstchat/key.pem -out /etc/herbstchat/cert.pem \
-      -subj "/CN=chat.example.org" -addext "subjectAltName=DNS:chat.example.org" >/dev/null 2>&1
+      -subj "/CN=$CN" -addext "subjectAltName=$SAN" >/dev/null 2>&1
   fi
   chown root:herbstchat /etc/herbstchat /etc/herbstchat/key.pem /etc/herbstchat/cert.pem /etc/herbstchat/server.conf
   chmod 750 /etc/herbstchat; chmod 640 /etc/herbstchat/key.pem /etc/herbstchat/server.conf; chmod 644 /etc/herbstchat/cert.pem
@@ -33,5 +38,9 @@ if [ "$1" = "configure" ]; then
     systemctl restart herbstchat-server.service || true
   fi
   echo "Herbstchat Server laeuft auf Port 47474/TCP (TLS). Bitte im Router weiterleiten."
+  if ! grep -qE '^[[:space:]]*public_address[[:space:]]*=[[:space:]]*[^[:space:]]' /etc/herbstchat/server.conf; then
+    echo "Tipp: Trage deine oeffentliche Adresse (Domain/DynDNS) in /etc/herbstchat/server.conf"
+    echo "      unter public_address ein - sie wird in der Admin-Oberflaeche angezeigt."
+  fi
 fi
 exit 0

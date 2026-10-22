@@ -36,7 +36,7 @@ def load_config(path):
     c.read_dict({
         "server": {"host": "0.0.0.0", "port": "47474", "cert": "/etc/herbstchat/cert.pem",
                    "key": "/etc/herbstchat/key.pem", "database": "/var/lib/herbstchat/herbstchat.db",
-                   "public_address": "chat.example.org"},
+                   "public_address": ""},
         "admin": {"host": "0.0.0.0", "port": "8088", "user": "admin", "password_hash": "",
                   "allowed_networks": "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fe80::/10,fc00::/7"},
         "smtp": {"host": "", "port": "587", "user": "", "password": "", "sender": "", "starttls": "yes"},
@@ -584,7 +584,7 @@ class AdminSite:
                          for r in db.all("SELECT * FROM auditlog ORDER BY id DESC LIMIT 10"))
         return self.page("Dashboard", f"""<div class=grid>{cards}</div>
 <div class=card><h3>Letzte Ereignisse</h3><table>{recent}</table></div>
-<div class=card>Server-Adresse für Clients: <b>{html.escape(self.cfg['server']['public_address'])}:{self.cfg['server']['port']}</b>
+<div class=card>Server-Adresse für Clients: <b>{html.escape((self.cfg['server']['public_address'] + ':' + self.cfg['server']['port']) if self.cfg['server']['public_address'] else 'nicht eingetragen (public_address in server.conf)')}</b>
 &nbsp;|&nbsp; Version {VERSION}</div>""", request.query.get("m", ""), path="/")
 
     async def users(self, request):
