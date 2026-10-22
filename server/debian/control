@@ -1,0 +1,13 @@
+Package: herbstchat-server
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.9), python3-aiohttp, openssl, adduser, systemd
+Maintainer: Herbstleyd <admin@herbstleyd.org>
+Homepage: https://herbstleyd.org
+Description: Herbstchat - privater Ende-zu-Ende-verschluesselter Messenger-Server
+ Server fuer den Herbstchat Instant Messenger mit Offline-Nachrichten,
+ Ende-zu-Ende-Verschluesselung (X25519/XSalsa20-Poly1305, clientseitig)
+ und einer nur im lokalen Netz erreichbaren Admin-Weboberflaeche.
+ Laeuft auf arm64 und amd64 (reines Python).

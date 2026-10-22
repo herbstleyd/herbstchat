@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
     QSoundEffect = None
 
 APP = "Herbstchat"
-VERSION = "1.1.0"
+VERSION = "1.1.2"
 DEFAULT_SERVER = "chat.example.org"
 DEFAULT_PORT = 47474
 WEBSITE = "https://herbstleyd.org"
@@ -418,8 +418,7 @@ class MainWindow(QMainWindow):
         self.profile = {"history": {}, "keys": {}, "unread": {}, "names": {}}
         self.current = None; self.pending = {}; self.pending_action = None
         self.manual_logout = False; self.typing_sent = 0; self.typing_from = {}
-        self.history_local_counter = 0
-        self.history_syncing = False
+        self.upload_queue = []          # Chunks für den einmaligen Import des alten Verlaufs
         self.setWindowTitle(APP); self.setWindowIcon(app_icon(self.settings["accent"])); self.resize(980, 660)
         self.build_ui(); self.build_tray(); self.apply_settings(save=False)
         self.reconnect_timer = QTimer(self, interval=5000, timeout=self.reconnect)
@@ -654,32 +653,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP, "Passwort erfolgreich geändert.")
         elif t == "email_ok":
             self.me["email"] = d["email"]; QMessageBox.information(self, APP, "E-Mail-Adresse geändert.")
-        elif t == "history_counter":
-            self.history_sync_counter = d["counter"]
         elif t == "history_delta":
-            for entry in d.get("delta", []):
-                key = str(entry["contact_id"])
-                box = self.box(entry["contact_id"])
-                if box:
-                    try:
-                        obj = json.loads(box.decrypt(b64d(entry["blob"])))
-                        self.history(entry["contact_id"]).append(
-                            {"me": False, "text": obj.get("text", ""), "ts": entry["ts"]})
-                        last_key = key
-                        self.history_local_counter = entry["id"]
-                    except Exception:
-                        pass
-            self.save_profile()
-            if last_key and str(self.current) == last_key:
-                self.render_chat()
-            if self.history_syncing:
-                self.history_syncing = False
-                self._upload_local_history()
+            self.history_merge(d)
         elif t == "history_uploaded":
-            self.conn.send({"t": "history_updated", "counter": self.history_local_counter})
-        elif t == "history_updated_ok":
-            self.history_local_counter = d["counter"]
-            self.save_profile()
+            self.history_upload_next()
+        elif t == "msg_copy":
+            self.msg_copy(d)
         elif t == "user":
             self.add_known(d["user"], persist_contact=False)
 
@@ -692,8 +671,6 @@ class MainWindow(QMainWindow):
                 self.login_dlg.fail("Privater Schlüssel konnte nicht entschlüsselt werden."); return
             self.me = {"id": d["id"], "nick": d["nick"], "email": d["email"], "pubkey": d["pubkey"]}
             self.load_profile()
-            self.history_local_counter = len(self.profile.get("history", {}))
-            self.history_sync_counter = d.get("history_counter", 0)
             st = self.settings["start_status"]
             self.status_box.setCurrentIndex(["online", "away", "busy", "invisible"].index(st))
             self.pending_action = None
@@ -703,10 +680,9 @@ class MainWindow(QMainWindow):
         for c in d["contacts"]:
             self.add_known(c)
         self.update_me(); self.refresh_contacts(); self.set_chat_enabled(self.current is not None)
-        self.history_sync_counter = d.get("history_counter", 0)
-        if self.history_sync_counter:
-            self.history_syncing = True
-            self.conn.send({"t": "history_delta", "since": self.history_local_counter, "user_id": d["id"]})
+        self.upload_queue = []
+        if "history_counter" in d:          # Server >= 1.1 kann Verlauf synchronisieren
+            self.conn.send({"t": "history_delta", "since": int(self.profile.get("history_last", 0))})
         if first and not self.settings["start_minimized"]:
             self.show_normal()
         elif first and self.tray:
@@ -721,21 +697,99 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP} - {self.me['nick']}" if self.me else APP)
 
     # ---- profile (lokal, verschlüsselt)
-    def _upload_local_history(self):
-        entries = []
-        for cid, msgs in self.profile["history"].items():
-            contact_id = int(cid)
-            pk = self.profile["keys"].get(cid)
-            if not pk: continue
-            box = self.box(contact_id)
+    # ---- Verlauf über Geräte synchronisieren (Server speichert nur Chiffretext)
+    @staticmethod
+    def _hkey(me, ts, text):
+        return (bool(me), round(float(ts), 3), text)
+
+    def history_merge(self, d):
+        for k, u in (d.get("users") or {}).items():
+            if u and u.get("pubkey") and k not in self.profile["keys"]:
+                self.profile["keys"][k] = u["pubkey"]
+            if u and u.get("nick"):
+                self.profile["names"].setdefault(k, u["nick"])
+        touched, index = set(), {}
+        for e in d.get("delta", []):
+            key = str(e["contact_id"]); box = self.box(e["contact_id"])
+            if not box:
+                continue
+            try:
+                text = str(json.loads(box.decrypt(b64d(e["blob"]))).get("text", ""))
+            except Exception:
+                continue
+            hist = self.history(key)
+            if key not in index:
+                index[key] = ({m.get("cid"): m for m in hist if m.get("cid")},
+                              {self._hkey(m.get("me"), m.get("ts", 0), m.get("text")) for m in hist if not m.get("sys")})
+            by_cid, seen = index[key]
+            me = bool(e.get("out"))
+            if me and e.get("cid") and e["cid"] in by_cid:
+                m = by_cid[e["cid"]]
+                if m.get("state") in ("sending", None): m["state"] = "sent"
+                m.setdefault("h", e["id"]); continue
+            hk = self._hkey(me, e["ts"], text)
+            if hk in seen:
+                continue
+            m = {"me": me, "text": text, "ts": e["ts"], "h": e["id"]}
+            if me:
+                m["state"] = "sent"
+                if e.get("cid"): m["cid"] = e["cid"]; by_cid[e["cid"]] = m
+            hist.append(m); seen.add(hk); touched.add(key)
+        for key in touched:
+            self.history(key).sort(key=lambda m: m.get("ts", 0))
+        self.profile["history_last"] = max(int(self.profile.get("history_last", 0)), int(d.get("last", 0)))
+        self.save_profile()
+        if touched:
+            self.refresh_contacts()
+            if str(self.current) in touched: self.render_chat()
+        if d.get("more"):
+            self.conn.send({"t": "history_delta", "since": self.profile["history_last"]})
+        elif not self.profile.get("legacy_uploaded"):
+            self.history_upload_start()
+
+    def history_upload_start(self):
+        """Einmalig: lokalen Verlauf von vor 1.1.2 hochladen, damit andere Geräte ihn sehen."""
+        cutoff = self.profile.setdefault("sync_start", time.time())
+        chunk, size = [], 0
+        for key, msgs in self.profile["history"].items():
+            box = self.box(key)
             if not box: continue
             for m in msgs:
-                payload = b64e(box.encrypt(json.dumps({"text": m.get("text", ""), "ts": m.get("ts", time.time())}).encode()))
-                entries.append({"contact_id": contact_id, "blob": payload, "ts": m.get("ts", time.time())})
-        if entries:
-            self.conn.send({"t": "history_upload", "entries": entries})
+                if m.get("sys") or "h" in m or m.get("ts", 0) >= cutoff or m.get("state") in ("sending", "failed"):
+                    continue
+                blob = b64e(box.encrypt(json.dumps({"text": m.get("text", ""), "ts": m["ts"]}).encode()))
+                if chunk and (len(chunk) >= 150 or size + len(blob) > 90000):
+                    self.upload_queue.append(chunk); chunk, size = [], 0
+                chunk.append(({"contact_id": int(key), "out": bool(m.get("me")), "blob": blob, "ts": m["ts"]}, m))
+                size += len(blob) + 80
+        if chunk: self.upload_queue.append(chunk)
+        self.history_upload_next(first=True)
+
+    def history_upload_next(self, first=False):
+        if not first and self.upload_queue:
+            for _, m in self.upload_queue.pop(0):
+                m["h"] = 0          # hochgeladen
+        if self.upload_queue:
+            self.conn.send({"t": "history_upload", "hv": 2, "entries": [e for e, _ in self.upload_queue[0]]})
         else:
-            self.conn.send({"t": "history_updated", "counter": self.history_local_counter})
+            if not self.profile.get("legacy_uploaded"):
+                self.profile["legacy_uploaded"] = True; self.save_profile()
+
+    def msg_copy(self, d):
+        """Nachricht, die ich auf einem anderen Gerät gesendet habe."""
+        to = d["to"]; key = str(to)
+        if d.get("to_pubkey") and key not in self.profile["keys"]: self.profile["keys"][key] = d["to_pubkey"]
+        if d.get("to_nick"): self.profile["names"][key] = d["to_nick"]
+        box = self.box(to)
+        try:
+            text = str(json.loads(box.decrypt(b64d(d["payload"]))).get("text", ""))
+        except Exception:
+            return
+        if d.get("cid") and self.find_cid(d["cid"]): return
+        self.history(to).append({"me": True, "text": text, "ts": d.get("ts", time.time()), "cid": d.get("cid"),
+                                 "state": "sent", "h": d.get("hid", 0)})
+        self.save_profile(); self.refresh_contacts()
+        if self.current == to: self.render_chat()
 
     def profile_path(self):
         return os.path.join(DATA_DIR, f"profile_{self.me['id']}_{self.settings['server']}.dat")
@@ -748,6 +802,10 @@ class MainWindow(QMainWindow):
             self.profile = {"history": {}, "keys": {}, "unread": {}, "names": {}}
         for k in ("history", "keys", "unread", "names"):
             self.profile.setdefault(k, {})
+        self.profile.setdefault("history_last", 0)
+        if not self.profile["history"]:      # nichts Altes zum Hochladen
+            self.profile.setdefault("legacy_uploaded", True)
+        self.profile.setdefault("sync_start", time.time())
 
     def save_profile(self):
         if not self.me: return
@@ -759,12 +817,16 @@ class MainWindow(QMainWindow):
         os.replace(self.profile_path() + ".tmp", self.profile_path())
 
     def clear_history(self):
-        if QMessageBox.question(self, APP, "Gesamten lokalen Chatverlauf löschen?") == QMessageBox.Yes:
+        if QMessageBox.question(self, APP, "Gesamten Chatverlauf löschen?\n\nDer Verlauf wird auf diesem Gerät und auf dem "
+                                "Server gelöscht und ist danach auch auf deinen anderen Geräten nicht mehr abrufbar.") == QMessageBox.Yes:
             self.profile["history"] = {}; self.profile["unread"] = {}; self.save_profile(); self.render_chat(); self.refresh_contacts()
+            if self.me: self.conn.send({"t": "history_clear"})
 
     def clear_chat(self):
-        if self.current and QMessageBox.question(self, APP, "Verlauf mit diesem Kontakt löschen?") == QMessageBox.Yes:
+        if self.current and QMessageBox.question(self, APP, "Verlauf mit diesem Kontakt löschen?\n\n"
+                                                 "(auch auf dem Server und damit auf allen deinen Geräten)") == QMessageBox.Yes:
             self.profile["history"].pop(str(self.current), None); self.save_profile(); self.render_chat()
+            self.conn.send({"t": "history_clear", "contact_id": self.current})
 
     # ---- contacts
     def add_known(self, c, persist_contact=True):
@@ -909,7 +971,9 @@ class MainWindow(QMainWindow):
             text = str(obj.get("text", ""))
         except Exception:
             text = "[Nachricht konnte nicht entschlüsselt werden]"
-        self.history(sender).append({"me": False, "text": text, "ts": d.get("ts", time.time())})
+        m = {"me": False, "text": text, "ts": d.get("ts", time.time())}
+        if d.get("hid"): m["h"] = d["hid"]
+        self.history(sender).append(m)
         self.conn.send({"t": "ack", "ids": [d["id"]]})
         self.typing_from.pop(sender, None)
         visible = self.current == sender and self.isActiveWindow() and not self.isMinimized()

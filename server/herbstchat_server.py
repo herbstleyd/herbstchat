@@ -15,7 +15,7 @@ import ipaddress, json, logging, os, re, secrets, smtplib, sqlite3, ssl, sys, ti
 from email.message import EmailMessage
 from aiohttp import web, WSMsgType
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 DEFAULT_CONF = "/etc/herbstchat/server.conf"
 log = logging.getLogger("herbstchat")
 
@@ -24,6 +24,10 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MAX_MSG = 64 * 1024          # max. Größe verschlüsselter Nachricht
 MAX_QUEUE = 2000             # max. offline gespeicherte Nachrichten pro Empfänger
 QUEUE_DAYS = 60              # unzugestellte Nachrichten verfallen nach X Tagen
+MAX_HISTORY = 20000          # max. synchronisierte Verlaufseinträge pro Benutzer
+HISTORY_PAGE_BYTES = 512 * 1024   # max. Größe einer Sync-Antwort
+HISTORY_PAGE_ROWS = 500
+HISTORY_UPLOAD_MAX = 200     # max. Einträge pro history_upload
 
 
 # --------------------------------------------------------------------------- Config
@@ -80,9 +84,11 @@ CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, sender
   recipient INTEGER, payload TEXT, ts REAL);
 CREATE INDEX IF NOT EXISTS idx_msg_rcpt ON messages(recipient);
 CREATE TABLE IF NOT EXISTS auditlog(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, text TEXT);
+-- Verlauf für Mehrgeräte-Sync: nur Chiffretext (NaCl Box zwischen user und contact),
+-- outgoing=1: user hat an contact geschrieben. Der Server kann den Inhalt nicht lesen.
 CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL, contact_id INTEGER NOT NULL,
-  blob TEXT NOT NULL, ts REAL NOT NULL);
+  blob TEXT NOT NULL, ts REAL NOT NULL, outgoing INTEGER NOT NULL DEFAULT 0, cid TEXT);
 CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, id);
 """
 
@@ -95,6 +101,12 @@ class DB:
         self.c.execute("PRAGMA journal_mode=WAL")
         self.c.execute("PRAGMA foreign_keys=ON")
         self.c.executescript(SCHEMA)
+        # Migration von 1.1.0/1.1.1 (history ohne outgoing/cid)
+        cols = {r["name"] for r in self.c.execute("PRAGMA table_info(history)")}
+        if "outgoing" not in cols:
+            self.c.execute("ALTER TABLE history ADD COLUMN outgoing INTEGER NOT NULL DEFAULT 0")
+        if "cid" not in cols:
+            self.c.execute("ALTER TABLE history ADD COLUMN cid TEXT")
         r = self.one("SELECT v FROM meta WHERE k='secret'")
         if not r:
             self.x("INSERT INTO meta VALUES('secret',?)", (secrets.token_hex(32),))
@@ -109,6 +121,9 @@ class DB:
 
     def all(self, q, a=()):
         return self.c.execute(q, a).fetchall()
+
+    def history_last(self, uid):
+        return self.one("SELECT COALESCE(MAX(id), 0) AS n FROM history WHERE user_id=?", (uid,))["n"]
 
     def audit(self, text):
         self.x("INSERT INTO auditlog(ts,text) VALUES(?,?)", (time.time(), text))
@@ -269,7 +284,7 @@ class ChatServer:
             contacts = [self.contact_obj(r) for r in db.all(
                 "SELECT u.* FROM contacts c JOIN users u ON u.id=c.contact WHERE c.owner=? ORDER BY u.nick", (uid,))]
             motd = db.one("SELECT v FROM meta WHERE k='motd'")
-            hcnt = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
+            hcnt = db.history_last(uid)
             await self.send(ws, {"t": "login_ok", "id": uid, "nick": u["nick"], "email": u["email"],
                                   "pubkey": u["pubkey"], "enc_priv": u["enc_priv"], "contacts": contacts,
                                   "motd": motd["v"] if motd else "", "history_counter": hcnt})
@@ -307,13 +322,24 @@ class ChatServer:
             now = time.time()
             cur = db.x("INSERT INTO messages(sender,recipient,payload,ts) VALUES(?,?,?,?)", (uid, to, payload, now))
             db.x("UPDATE users SET msg_count=msg_count+1 WHERE id=?", (uid,))
-            db.x("INSERT INTO history(user_id, contact_id, blob, ts) VALUES(?,?,?,?)", (to, uid, payload, now))
             mid = cur.lastrowid
+            cid = str(d.get("cid", ""))[:64] or None
+            # Verlauf für alle Geräte: gleicher Chiffretext für Empfänger (eingehend) und Absender (ausgehend)
+            hin = db.x("INSERT INTO history(user_id, contact_id, blob, ts, outgoing, cid) VALUES(?,?,?,?,0,?)",
+                       (to, uid, payload, now, cid)).lastrowid
+            hout = db.x("INSERT INTO history(user_id, contact_id, blob, ts, outgoing, cid) VALUES(?,?,?,?,1,?)",
+                        (uid, to, payload, now, cid)).lastrowid
             # Absender automatisch beim Empfänger als Kontakt "bekannt machen"
             await self.send_user(to, {"t": "msg", "id": mid, "from": uid, "from_nick": u["nick"],
-                                      "from_pubkey": u["pubkey"], "payload": payload, "ts": now})
-            await self.send(ws, {"t": "sent", "cid": d.get("cid"), "id": mid, "ts": now,
+                                      "from_pubkey": u["pubkey"], "payload": payload, "ts": now, "hid": hin})
+            await self.send(ws, {"t": "sent", "cid": cid, "id": mid, "ts": now, "hid": hout,
                                  "queued": to not in self.online})
+            # andere Geräte des Absenders bekommen eine Kopie der gesendeten Nachricht
+            peer = db.one("SELECT nick, pubkey FROM users WHERE id=?", (to,))
+            for other in list(self.online.get(uid, ())):
+                if other is not ws:
+                    await self.send(other, {"t": "msg_copy", "to": to, "to_nick": peer["nick"], "to_pubkey": peer["pubkey"],
+                                            "payload": payload, "ts": now, "cid": cid, "hid": hout})
         elif t == "ack":
             ids = [int(i) for i in d.get("ids", []) if str(i).isdigit()][:500]
             for i in ids:
@@ -368,29 +394,59 @@ class ChatServer:
             db.x("UPDATE users SET email=? WHERE id=?", (email, uid))
             await self.send(ws, {"t": "email_ok", "email": email})
         elif t == "history_counter":
-            cnt = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
-            await self.send(ws, {"t": "history_counter", "counter": cnt})
+            await self.send(ws, {"t": "history_counter", "counter": db.history_last(uid)})
         elif t == "history_delta":
-            since = int(d.get("since", 0))
-            rows = db.all("SELECT * FROM history WHERE user_id=? AND id>? ORDER BY id", (uid, since))
-            await self.send(ws, {"t": "history_delta", "delta": [{"id": r["id"], "contact_id": r["contact_id"],
-                          "blob": r["blob"], "ts": r["ts"]} for r in rows]})
+            # seitenweise: max. HISTORY_PAGE_ROWS Einträge bzw. HISTORY_PAGE_BYTES pro Antwort
+            try:
+                since = int(d.get("since", 0))
+            except (TypeError, ValueError):
+                since = 0
+            rows = db.all("SELECT * FROM history WHERE user_id=? AND id>? ORDER BY id LIMIT ?",
+                          (uid, since, HISTORY_PAGE_ROWS + 1))
+            delta, size, users = [], 0, {}
+            for r in rows[:HISTORY_PAGE_ROWS]:
+                size += len(r["blob"]) + 120
+                if delta and size > HISTORY_PAGE_BYTES:
+                    break
+                delta.append({"id": r["id"], "contact_id": r["contact_id"], "out": bool(r["outgoing"]),
+                              "blob": r["blob"], "ts": r["ts"], "cid": r["cid"]})
+                users.setdefault(r["contact_id"], None)
+            for cid in list(users):
+                ur = db.one("SELECT nick, pubkey FROM users WHERE id=?", (cid,))
+                users[cid] = {"nick": ur["nick"], "pubkey": ur["pubkey"]} if ur else None
+            last = delta[-1]["id"] if delta else max(since, 0)
+            await self.send(ws, {"t": "history_delta", "delta": delta, "last": last,
+                                 "more": len(delta) < len(rows),
+                                 "users": {str(k): v for k, v in users.items() if v}})
         elif t == "history_upload":
-            for entry in d.get("entries", []):
+            # einmaliger Import des alten lokalen Verlaufs (vom Client selbst verschlüsselt).
+            # Clients < 1.1.2 luden bei jedem Login alles erneut hoch -> ohne "hv" ignorieren.
+            n = 0
+            if d.get("hv") == 2:
+                for entry in list(d.get("entries", []))[:HISTORY_UPLOAD_MAX]:
+                    try:
+                        cid = int(entry["contact_id"])
+                        blob = str(entry["blob"])
+                        ts = float(entry.get("ts", time.time()))
+                        assert len(blob) <= MAX_MSG and 0 < ts < time.time() + 86400
+                        assert db.one("SELECT 1 FROM users WHERE id=?", (cid,))
+                    except (ValueError, TypeError, KeyError, AssertionError):
+                        continue
+                    db.x("INSERT INTO history(user_id, contact_id, blob, ts, outgoing) VALUES(?,?,?,?,?)",
+                         (uid, cid, blob, ts, 1 if entry.get("out") else 0))
+                    n += 1
+            await self.send(ws, {"t": "history_uploaded", "n": n})
+        elif t == "history_updated":      # Kompatibilität mit Clients 1.1.0
+            await self.send(ws, {"t": "history_updated_ok", "counter": db.history_last(uid)})
+        elif t == "history_clear":
+            if d.get("contact_id") is not None:
                 try:
-                    cid = int(entry["contact_id"])
-                    blob = str(entry["blob"])[:65536]
-                    ts = float(entry.get("ts", time.time()))
-                    assert db.one("SELECT 1 FROM users WHERE id=?", (cid,))
-                except (ValueError, KeyError, AssertionError):
-                    continue
-                db.x("INSERT INTO history(user_id, contact_id, blob, ts) VALUES(?,?,?,?)",
-                     (uid, cid, blob, ts))
-            await self.send(ws, {"t": "history_uploaded"})
-        elif t == "history_updated":
-            cnt = int(d.get("counter", 0))
-            cur = db.one("SELECT COALESCE(MAX(id),0) FROM history")["MAX(id)"]
-            await self.send(ws, {"t": "history_updated_ok", "counter": cur})
+                    db.x("DELETE FROM history WHERE user_id=? AND contact_id=?", (uid, int(d["contact_id"])))
+                except (TypeError, ValueError):
+                    return
+            else:
+                db.x("DELETE FROM history WHERE user_id=?", (uid,))
+            await self.send(ws, {"t": "history_cleared", "contact_id": d.get("contact_id")})
         elif t == "ping":
             await self.send(ws, {"t": "pong"})
 
@@ -398,6 +454,11 @@ class ChatServer:
         while True:
             try:
                 self.db.x("DELETE FROM messages WHERE ts<?", (time.time() - QUEUE_DAYS * 86400,))
+                for r in self.db.all("SELECT user_id FROM history GROUP BY user_id HAVING COUNT(*)>?", (MAX_HISTORY,)):
+                    cut = self.db.one("SELECT id FROM history WHERE user_id=? ORDER BY id DESC LIMIT 1 OFFSET ?",
+                                      (r["user_id"], MAX_HISTORY))
+                    if cut:
+                        self.db.x("DELETE FROM history WHERE user_id=? AND id<=?", (r["user_id"], cut["id"]))
             except Exception as e:
                 log.warning("cleanup: %s", e)
             await asyncio.sleep(3600)
@@ -478,7 +539,9 @@ class AdminSite:
            ("/settings", "Einstellungen"), ("/log", "Protokoll"), ("/debug", "Debug")]
 
     def sidebar(self, path):
-        links = ''.join(f'<a href="{p}" class="{"active" if path.startswith(p.rstrip("/")) else ""}">{n}</a>' for p, n in self.NAV)
+        def active(p):
+            return path == "/" if p == "/" else (path == p or path.startswith(p + "/") or (p == "/users" and path.startswith("/user")))
+        links = ''.join(f'<a href="{p}" class="{"active" if active(p) else ""}">{n}</a>' for p, n in self.NAV)
         return f'<aside><div class="logo">🍂 Herbstchat</div><h2>Admin</h2>{links}<div style="padding:14px 22px;font-size:12px;color:#aaa">v{VERSION}</div></aside>'
 
     def page(self, title, body, flash="", path="/"):
@@ -496,10 +559,10 @@ class AdminSite:
 
     def badges(self, u):
         b = []
-        b.append('<span class="b b-on">online</span>' if u["id"] in self.chat.online else '<span class="b b-off">offline</span>')
-        if u["banned"]: b.append('<span class="b b-ban">gebannt</span>')
-        if u["timeout_until"] and u["timeout_until"] > time.time(): b.append('<span class="b b-to">Timeout</span>')
-        if u["muted"]: b.append('<span class="b b-mu">stumm</span>')
+        b.append('<span class="badge b-on">online</span>' if u["id"] in self.chat.online else '<span class="badge b-off">offline</span>')
+        if u["banned"]: b.append('<span class="badge b-ban">gebannt</span>')
+        if u["timeout_until"] and u["timeout_until"] > time.time(): b.append('<span class="badge b-to">Timeout</span>')
+        if u["muted"]: b.append('<span class="badge b-mu">stumm</span>')
         return " ".join(b)
 
     async def dashboard(self, request):
@@ -508,12 +571,13 @@ class AdminSite:
         banned = db.one("SELECT COUNT(*) n FROM users WHERE banned=1")["n"]
         to = db.one("SELECT COUNT(*) n FROM users WHERE timeout_until>?", (time.time(),))["n"]
         q = db.one("SELECT COUNT(*) n FROM messages")["n"]
+        hist = db.one("SELECT COUNT(*) n FROM history")["n"]
         new7 = db.one("SELECT COUNT(*) n FROM users WHERE created>?", (time.time() - 7 * 86400,))["n"]
         act = db.one("SELECT COUNT(*) n FROM users WHERE last_login>?", (time.time() - 86400,))["n"]
         up = int(time.time() - self.chat.started)
         dbsize = os.path.getsize(self.cfg["server"]["database"]) // 1024 if os.path.exists(self.cfg["server"]["database"]) else 0
         stats = [("Benutzer", n), ("Online", len(self.chat.online)), ("Aktiv (24h)", act), ("Neu (7 Tage)", new7),
-                 ("Gebannt", banned), ("Im Timeout", to), ("Offline-Nachrichten", q),
+                 ("Gebannt", banned), ("Im Timeout", to), ("Offline-Nachrichten", q), ("Verlaufseinträge", hist),
                  ("Uptime", f"{up//86400}d {up%86400//3600}h {up%3600//60}m"), ("DB-Größe", f"{dbsize} KB")]
         cards = "".join(f'<div class=card><div>{k}</div><div class=stat>{v}</div></div>' for k, v in stats)
         recent = "".join(f"<tr><td>{self.ft(r['ts'])}</td><td>{html.escape(r['text'])}</td></tr>"
@@ -556,6 +620,7 @@ class AdminSite:
         h, a = self.hid(), f"/user/{uid}/action"
         nc = self.db.one("SELECT COUNT(*) n FROM contacts WHERE owner=?", (uid,))["n"]
         q = self.db.one("SELECT COUNT(*) n FROM messages WHERE recipient=?", (uid,))["n"]
+        hn = self.db.one("SELECT COUNT(*) n, COALESCE(SUM(LENGTH(blob)),0) b FROM history WHERE user_id=?", (uid,))
         to_opts = "".join(f'<option value="{s}">{l}</option>' for s, l in [
             (6*3600, "6 Stunden"), (12*3600, "12 Stunden"), (86400, "1 Tag"), (2*86400, "2 Tage"), (3*86400, "3 Tage"),
             (7*86400, "7 Tage"), (14*86400, "14 Tage"), (30*86400, "30 Tage")])
@@ -566,7 +631,8 @@ class AdminSite:
 <tr><th>ID</th><td>{u['id']}</td></tr><tr><th>E-Mail</th><td><a href="mailto:{html.escape(u['email'])}">{html.escape(u['email'])}</a></td></tr>
 <tr><th>Registriert</th><td>{self.ft(u['created'])}</td></tr><tr><th>Letzter Login</th><td>{self.ft(u['last_login'])} von {html.escape(u['last_ip'] or '-')}</td></tr>
 <tr><th>Gesendete Nachrichten</th><td>{u['msg_count']}</td></tr><tr><th>Kontakte</th><td>{nc}</td></tr>
-<tr><th>Wartende Offline-Nachrichten</th><td>{q}</td></tr><tr><th>Schlüssel-Fingerabdruck</th><td><code>{fp}</code></td></tr>
+<tr><th>Wartende Offline-Nachrichten</th><td>{q}</td></tr>
+<tr><th>Synchronisierter Verlauf</th><td>{hn['n']} Einträge ({hn['b'] // 1024} KB, verschlüsselt)</td></tr><tr><th>Schlüssel-Fingerabdruck</th><td><code>{fp}</code></td></tr>
 <tr><th>Timeout bis</th><td>{tou} {html.escape(u['timeout_reason'] or '')}</td></tr>
 <tr><th>Bann-Grund</th><td>{html.escape(u['ban_reason'] or '-')}</td></tr></table></div>
 <div class=grid style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">
@@ -591,9 +657,10 @@ class AdminSite:
 <textarea name=note rows=3 style="width:95%">{html.escape(u['note'] or '')}</textarea><br><button>Speichern</button></form></div>
 <div class=card><h3>Gefahrenzone</h3>
 <form method=post action="{a}" class=inline>{h}<input type=hidden name=do value=purge><button class=sec>Offline-Nachrichten verwerfen</button></form>
+<form method=post action="{a}" class=inline onsubmit="return confirm('Synchronisierten Verlauf dieses Users löschen?')">{h}<input type=hidden name=do value=purgehist><button class=sec>Sync-Verlauf löschen</button></form>
 <form method=post action="{a}" class=inline onsubmit="return confirm('Account wirklich endgültig löschen?')">{h}
 <input type=hidden name=do value=delete><button class=danger>Account löschen</button></form></div></div>"""
-        return self.page(u["nick"], body, request.query.get("m", ""), path="/user")
+        return self.page(u["nick"], body, request.query.get("m", ""), path=f"/user/{uid}")
 
     async def user_action(self, request):
         uid = int(request.match_info["id"])
@@ -652,10 +719,14 @@ class AdminSite:
             db.x("UPDATE users SET note=? WHERE id=?", (d.get("note", ""), uid))
         elif do == "purge":
             db.x("DELETE FROM messages WHERE recipient=?", (uid,)); msg = "Offline-Nachrichten verworfen."
+        elif do == "purgehist":
+            db.x("DELETE FROM history WHERE user_id=?", (uid,)); db.audit(f"Admin: Sync-Verlauf von {u['nick']} gelöscht")
+            msg = "Sync-Verlauf gelöscht."
         elif do == "delete":
             await chat.kick(uid, "Dein Account wurde gelöscht.")
             db.x("DELETE FROM messages WHERE recipient=? OR sender=?", (uid, uid))
             db.x("DELETE FROM contacts WHERE owner=? OR contact=?", (uid, uid))
+            db.x("DELETE FROM history WHERE user_id=? OR contact_id=?", (uid, uid))
             db.x("DELETE FROM users WHERE id=?", (uid,))
             db.audit(f"Admin: Account {u['nick']} <{u['email']}> gelöscht")
             raise web.HTTPFound("/users?m=Account+gelöscht")
@@ -711,8 +782,6 @@ class AdminSite:
             self.db.x("INSERT OR REPLACE INTO meta VALUES('motd',?)", (d.get("motd", ""),))
         elif d.get("do") == "reg":
             self.db.x("INSERT OR REPLACE INTO meta VALUES('reg_closed',?)", ("1" if d.get("closed") else "0",))
-        elif d.get("do") == "mailtest":
-            msg = send_mails(self.cfg, [d.get("to")], "Herbstchat Test", "Dies ist eine Test-E-Mail vom Herbstchat-Server.")
         elif d.get("do") == "vacuum":
             self.db.x("VACUUM"); msg = "Datenbank optimiert."
         raise web.HTTPFound("/settings?m=" + msg.replace(" ", "+"))
@@ -723,7 +792,11 @@ class AdminSite:
         return self.page("Protokoll", f"<div class=card><h3>Protokoll (letzte 500)</h3><table>{tr}</table></div>", path="/log")
 
     async def debugpage(self, request):
-        import platform, resource
+        import platform
+        try:
+            import resource
+        except ImportError:      # Windows
+            resource = None
         db = self.db
         dbpath = self.cfg["server"]["database"]
         dbsize = os.path.getsize(dbpath) if os.path.exists(dbpath) else 0
@@ -739,8 +812,9 @@ class AdminSite:
 
         proc_mem = "-"
         try:
-            r = resource.getrusage(resource.RUSAGE_SELF)
-            proc_mem = f"{r.ru_maxrss / 1024:.1f} MB"
+            if resource:
+                r = resource.getrusage(resource.RUSAGE_SELF)
+                proc_mem = f"{r.ru_maxrss / 1024:.1f} MB (Spitze)"
         except Exception:
             pass
 
@@ -766,15 +840,15 @@ class AdminSite:
         tdbody += f'<div class="debug-row"><kbd>Audit-Einträge</kbd><span>{audit_rows}</span></div>'
 
         rows = db.all("""
-            SELECT id, nick, created, last_login, msg_count,
-                COALESCE(SELECT SUM(LENGTH(blob)) FROM history h2 WHERE h2.user_id = u.id, 0) AS hist_bytes
-            FROM users u ORDER BY last_login DESC NULLS LAST
+            SELECT u.id, u.nick, u.created, u.last_login, u.msg_count,
+                COALESCE((SELECT SUM(LENGTH(h.blob)) FROM history h WHERE h.user_id = u.id), 0) AS hist_bytes
+            FROM users u ORDER BY hist_bytes DESC, u.last_login DESC LIMIT 20
         """)
 
-        max_hist = max(r["hist_bytes"] for r in rows) if rows else 1
+        max_hist = max((r["hist_bytes"] for r in rows), default=0)
         ubody = ""
-        for u in rows[-20:]:
-            pct = max(1, int(u["hist_bytes"] / max(max_hist, 1) * 100) if max_hist else 1)
+        for u in rows:
+            pct = int(u["hist_bytes"] / max_hist * 100) if max_hist else 0
             lb = f'{u["hist_bytes"] / 1024:.1f} KB' if u["hist_bytes"] > 1024 else f'{u["hist_bytes"]} B'
             ln_txt = self.ft(u["last_login"])
             ubody += f"""<tr>
@@ -788,7 +862,7 @@ class AdminSite:
 <div class="card"><h3>System</h3>{tbody}</div>
 <div class="card"><h3>Datenbank</h3>{tdbody}</div>
 <div class="card"><h3>Top 20 – Speicherbedarf nach Nutzer</h3>
-<table><tr><th>ID</th><th>Nickname</th><th>Registriert</th><th>Letzter Login</th><th>Nachrichten</th><th>History-Größe</th><th>Laden</th></tr>{ubody}</table>
+<table><tr><th>ID</th><th>Nickname</th><th>Registriert</th><th>Letzter Login</th><th>Nachrichten</th><th>History-Größe</th><th>Anteil</th></tr>{ubody}</table>
 </div>""", path="/debug")
 
     def app(self):

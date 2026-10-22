@@ -6,37 +6,30 @@ Herbstchat ist ein privater Instant Messenger mit Ende-zu-Ende-Verschlüsselung.
 
 Der Server läuft als Python-Dienst (mit `aiohttp` & SQLite) und wird empfohlen unter Debian oder Ubuntu. Er wird über `systemd` verwaltet.
 
-### 1.1 Voraussetzungen
+### 1.1 Debian-Paket installieren (empfohlen)
 
-Achte darauf, dass `python3` und die benötigten Pakete auf dem Zielsystem vorhanden sind:
+Lade `herbstchat-server_<VERSION>_all.deb` aus den GitHub-Releases herunter und installiere es:
 ```bash
-sudo apt update
-sudo apt install python3 pip python3-aiohttp openssl ca-certificates
+sudo apt install ./herbstchat-server_*_all.deb
 ```
+Das Paket legt Benutzer, Konfiguration (`/etc/herbstchat/server.conf`), TLS-Zertifikat, Admin-Passwort
+(`/etc/herbstchat/admin-zugang.txt`) und den systemd-Dienst automatisch an und startet den Server.
 
-### 1.2 Vom Quellcode bereitstellen
+### 1.2 Paket selbst aus dem Quellcode bauen
 
 ```bash
-# Repository klonen (oder Quellarchiv entpacken)
+sudo apt install git dpkg-dev python3 python3-aiohttp openssl
 git clone https://github.com/herbstleyd/herbstchat.git
 cd herbstchat/server
-
-# Server-Verzeichnis erstellen
-sudo mkdir -p /etc/herbstchat /var/lib/herbstchat
-sudo cp herbstchat_server.py /usr/lib/herbstchat-server/
-sudo cp herbstchat_server.py /usr/bin/herbstchat-server
-sudo chmod +x /usr/bin/herbstchat-server
-```
-
-*(Optional)* Falls du ein fertiges Debian-Paket (`herbstchat-server_1.1.0_all.deb`) über GitHub Releases heruntergeladen hast, kannst du es alternativ direkt installieren:
-```bash
-sudo apt install ./herbstchat-server_1.1.0_all.deb
+python3 test_server.py        # optional: Selbsttest (braucht zusätzlich python3-nacl)
+./build-deb.sh                # erzeugt herbstchat-server_<VERSION>_all.deb
+sudo apt install ./herbstchat-server_*_all.deb
 ```
 
 ### 1.3 Zertifikat und Konfiguration
 
-1. **TLS-Zertifikat:** Erzeuge ein passendes Zertifikat (oder nutze Let's Encrypt wie unten gezeigt).
-2. **Admin-Setup:** Setze ein sicheres Passwort für die Admin-Oberfläche.
+1. **TLS-Zertifikat:** Wird bei der Installation selbstsigniert erzeugt (`/etc/herbstchat/cert.pem`, Fingerabdruck in `/etc/herbstchat/zertifikat-fingerabdruck.txt`).
+2. **Admin-Passwort ändern** (optional):
 ```bash
 sudo herbstchat-server --set-admin-password
 ```
@@ -51,7 +44,7 @@ sudo systemctl status herbstchat-server
 
 **Hinweis zu Ports:**
 - **Chat-Verkehr:** Port `47474` (TCP, TLS). Muss im Router nach außen freigegeben werden.
-- **Admin-Oberfläche:** Port `8088` (HTTP). Darf *niemals* ins Internet geroutet werden, sie ist nur für das lokaleNetz vorgesehen.
+- **Admin-Oberfläche:** Port `8088` (HTTP). Darf *niemals* ins Internet geroutet werden, sie ist nur für das lokale Netz vorgesehen.
 
 ---
 
@@ -82,7 +75,7 @@ chmod +x Herbstchat-Linux-x86_64
 
 ### 1.6 Android-App
 
-Die Android-App (`Herbstchat-1.1.0.apk`) ist eine native Kotlin-App und nutzt dieselbe E2EE-Technologie wie der Desktop-Client.
+Die Android-App (`Herbstchat-<VERSION>.apk`) ist eine native Kotlin-App und nutzt dieselbe E2EE-Technologie wie der Desktop-Client.
 
 1. Lade die APK-Datei auf dein Smartphone.
 2. Öffne die Datei und erlaube die Installation aus dieser Quelle.
@@ -94,7 +87,7 @@ Die Android-App (`Herbstchat-1.1.0.apk`) ist eine native Kotlin-App und nutzt di
 
 1. Starte Herbstchat auf deinem Endgerät.
 2. Der Server ist standardmäßig auf `chat.example.org:47474` eingestellt. Passe dies an, falls du eine andere IP oder Domain nutzt.
-3. Gib deine E-Mail, einen einträglichen Namen (Nickname) und ein sicheres Passwort ein.
+3. Gib deine E-Mail, einen Namen (Nickname) und ein sicheres Passwort ein.
 4. Beim ersten Verbinden siehst du den Zertifikats-Fingerabdruck des Servers. Vergleiche ihn ggf. mit `cat /etc/herbstchat/zertifikat-fingerabdruck.txt` und bestätige ihn.
 
 ---
@@ -107,4 +100,12 @@ Die Android-App (`Herbstchat-1.1.0.apk`) ist eine native Kotlin-App und nutzt di
 
 **Deinstallation:**
 - Server: `sudo apt purge herbstchat-server` (löscht Serverdaten! Erstelle vorher ein Backup von `/var/lib/herbstchat/`).
-- Clients: Lösche die heruntergeladenen Programmdateien. Lokale Cache-Daten finden sich unter `%LOCALAPPDATA%Herbstchat` (Windows), `~/Library/Application Support/Herbstchat` (macOS) und `~/.local/share/Herbstchat` (Linux).
+- Clients: Lösche die heruntergeladenen Programmdateien. Lokale Cache-Daten finden sich unter `%LOCALAPPDATA%\\Herbstchat` (Windows), `~/Library/Application Support/Herbstchat` (macOS) und `~/.local/share/Herbstchat` (Linux).
+
+---
+
+### 1.9 Chatverlauf auf mehreren Geräten
+
+Ab Version 1.1.2 wird der Chatverlauf automatisch zwischen allen Geräten eines Kontos abgeglichen.
+Der Server speichert dafür nur verschlüsselte Daten (max. 20 000 Einträge pro Benutzer); lesen kann er sie nicht.
+„Verlauf löschen“ im Client löscht auch die Kopie auf dem Server. Server und Clients sollten dieselbe Version haben.

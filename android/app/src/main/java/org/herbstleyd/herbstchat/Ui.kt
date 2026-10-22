@@ -509,7 +509,7 @@ fun ChatScreen(id: Int) {
         }
     }
     when (confirm) {
-        "clear" -> ConfirmDialog("Verlauf mit diesem Kontakt löschen?", { confirm = null }) { c.clearChat(id) }
+        "clear" -> ConfirmDialog("Verlauf mit diesem Kontakt löschen? (auch auf dem Server und allen deinen Geräten)", { confirm = null }) { c.clearChat(id) }
         "remove" -> ConfirmDialog("${c.nickOf(id)} aus der Kontaktliste entfernen?", { confirm = null }) { c.removeContact(id) }
     }
 }
@@ -666,7 +666,7 @@ fun SettingsScreen(back: () -> Unit) {
     }
 
     when (dialog) {
-        "clearall" -> ConfirmDialog("Gesamten lokalen Chatverlauf löschen?", { dialog = null }) { c.clearAllHistory() }
+        "clearall" -> ConfirmDialog("Gesamten Chatverlauf löschen? Er wird auch auf dem Server und damit auf allen deinen Geräten gelöscht.", { dialog = null }) { c.clearAllHistory() }
         "mail" -> {
             var mail by remember { mutableStateOf(c.me?.email ?: "") }
             AlertDialog(onDismissRequest = { dialog = null }, title = { Text("E-Mail-Adresse ändern") },

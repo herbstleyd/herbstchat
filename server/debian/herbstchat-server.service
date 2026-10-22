@@ -1,0 +1,20 @@
+[Unit]
+Description=Herbstchat Server (Ende-zu-Ende-verschluesselter Messenger)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=herbstchat
+Group=herbstchat
+ExecStart=/usr/bin/herbstchat-server -c /etc/herbstchat/server.conf
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/herbstchat
+ReadOnlyPaths=/etc/herbstchat
+
+[Install]
+WantedBy=multi-user.target

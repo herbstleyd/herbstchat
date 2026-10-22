@@ -22,16 +22,19 @@ val MY_STATUSES = listOf("online", "away", "busy", "invisible")
 data class Me(val id: Int, var nick: String, var email: String, val pubkey: String)
 data class Contact(val id: Int, var nick: String, var pubkey: String, var status: String)
 data class Msg(val me: Boolean, val text: String, val ts: Double, val cid: String? = null,
-               var state: String? = null, val sys: Boolean = false, var err: String? = null) {
+               var state: String? = null, val sys: Boolean = false, var err: String? = null,
+               /** Server-Verlaufs-ID (Sync); 0 = alter Verlauf bereits hochgeladen, null = nur lokal */
+               var h: Int? = null) {
     fun toJson(): JSONObject = JSONObject().apply {
         if (sys) put("sys", true) else put("me", me)
         put("text", text); put("ts", ts)
         cid?.let { put("cid", it) }; state?.let { put("state", it) }; err?.let { put("err", it) }
+        h?.let { put("h", it) }
     }
     companion object {
         fun from(j: JSONObject) = Msg(j.optBoolean("me"), j.optString("text"), j.optDouble("ts", 0.0),
             j.optString("cid").ifEmpty { null }, j.optString("state").ifEmpty { null }, j.optBoolean("sys"),
-            j.optString("err").ifEmpty { null })
+            j.optString("err").ifEmpty { null }, if (j.has("h")) j.optInt("h") else null)
     }
 }
 
@@ -91,8 +94,8 @@ object ChatCore : Connection.Listener {
     private var rememberSession = false
     private var reconnectDelay = 3000L
     private var pwPending: Triple<ByteArray, ByteArray, ByteArray>? = null
-    private var historyLocalCounter = 0
-    private var historySyncCounter = 0
+    /** Chunks für den einmaligen Import des alten lokalen Verlaufs */
+    private val uploadQueue = ArrayList<List<Pair<JSONObject, Msg>>>()
 
     private val reconnectRunnable = Runnable { reconnect() }
     private val pingRunnable = object : Runnable {
@@ -320,15 +323,9 @@ object ChatCore : Connection.Listener {
                 alert = Alert("Herbstchat", "Passwort erfolgreich geändert.")
             }
             "email_ok" -> { me?.email = d.optString("email"); alert = Alert("Herbstchat", "E-Mail-Adresse geändert.") }
-            "history_counter" -> historySyncCounter = d.optInt("counter", 0)
-            "history_delta" -> handleHistoryDelta(d)
-            "history_uploaded" -> {
-                send(JSONObject().put("t", "history_updated").put("counter", historyLocalCounter))
-            }
-            "history_updated_ok" -> {
-                historyLocalCounter = d.optInt("counter", 0)
-                saveProfile()
-            }
+            "history_delta" -> historyMerge(d)
+            "history_uploaded" -> historyUploadNext(false)
+            "msg_copy" -> msgCopy(d)
             "user" -> addKnown(d.getJSONObject("user"), persist = false)
         }
         bump()
@@ -360,11 +357,9 @@ object ChatCore : Connection.Listener {
         val arr = d.optJSONArray("contacts") ?: JSONArray()
         for (i in 0 until arr.length()) addKnown(arr.getJSONObject(i))
         for (item in pending.values.toList()) send(item)
-        historySyncCounter = d.optInt("history_counter", 0)
-        historyLocalCounter = if (first) allHistoryCount() else historyLocalCounter
-        if (historySyncCounter > 0) {
-            send(JSONObject().put("t", "history_delta").put("since", historyLocalCounter).put("user_id", me!!.id))
-        }
+        uploadQueue.clear()
+        if (d.has("history_counter"))      // Server >= 1.1 kann Verlauf synchronisieren
+            send(JSONObject().put("t", "history_delta").put("since", profile.optInt("history_last", 0)))
         ChatService.update(app)
     }
 
@@ -374,10 +369,6 @@ object ChatCore : Connection.Listener {
     fun keys() = obj("keys")
     fun unread() = obj("unread")
     private val historyCache = HashMap<String, MutableList<Msg>>()
-
-    private fun allHistoryCount(): Int = obj("history").keys().asSequence().mapNotNull {
-        obj("history").optJSONArray(it.toString())
-    }.sumOf { it.length() }.toInt()
 
     fun history(cid: Int): MutableList<Msg> = historyCache.getOrPut(cid.toString()) {
         val arr = obj("history").optJSONArray(cid.toString()) ?: JSONArray()
@@ -389,6 +380,9 @@ object ChatCore : Connection.Listener {
         profile = profiles.load(m.id, settings.server, vault!!)
         historyCache.clear()
         for (k in listOf("history", "keys", "unread", "names")) obj(k)
+        if (!profile.has("history_last")) profile.put("history_last", 0)
+        if (obj("history").length() == 0 && !profile.has("legacy_uploaded")) profile.put("legacy_uploaded", true)
+        if (!profile.has("sync_start")) profile.put("sync_start", now())
     }
 
     fun saveProfile() {
@@ -402,12 +396,15 @@ object ChatCore : Connection.Listener {
         bump()
     }
 
+    /** Löscht den Verlauf lokal und auf dem Server (damit auf allen Geräten). */
     fun clearAllHistory() {
         historyCache.clear(); profile.put("history", JSONObject()); profile.put("unread", JSONObject()); saveProfile()
+        send(JSONObject().put("t", "history_clear"))
     }
 
     fun clearChat(cid: Int) {
         historyCache.remove(cid.toString()); obj("history").remove(cid.toString()); saveProfile()
+        send(JSONObject().put("t", "history_clear").put("contact_id", cid))
     }
 
     // ------------------------------------------------------------------ Kontakte
@@ -493,7 +490,7 @@ object ChatCore : Connection.Listener {
             val pk = Crypto.b64d(keys().getString(key))
             JSONObject(String(Crypto.boxDecrypt(priv!!, pk, Crypto.b64d(d.getString("payload"))), Charsets.UTF_8)).optString("text")
         } catch (e: Exception) { "[Nachricht konnte nicht entschlüsselt werden]" }
-        history(sender).add(Msg(false, text, d.optDouble("ts", now())))
+        history(sender).add(Msg(false, text, d.optDouble("ts", now()), h = if (d.has("hid")) d.optInt("hid") else null))
         send(JSONObject().put("t", "ack").put("ids", JSONArray().put(d.get("id"))))
         typingFrom.remove(sender)
         val seen = visible && current == sender
@@ -512,53 +509,109 @@ object ChatCore : Connection.Listener {
     fun isTyping(id: Int) = typingFrom[id]?.let { System.currentTimeMillis() - it < 5000 } == true
 
     // ------------------------------------------------------------------ History Sync
-    private fun handleHistoryDelta(d: JSONObject) {
-        val delta = d.optJSONArray("delta") ?: return
-        var lastKey = ""
-        for (i in 0 until delta.length()) {
-            val entry = delta.getJSONObject(i)
-            val cid = entry.getInt("contact_id")
-            val pkRaw = keys().optString(cid.toString())
-            if (pkRaw.isEmpty()) continue
-            val pk = pkRaw
-            val payload = Crypto.b64d(entry.getString("blob"))
-            try {
-                val body = Crypto.boxDecrypt(priv!! , Crypto.b64d(pk), payload)
-                val msg = JSONObject(String(body, Charsets.UTF_8))
-                history(cid).add(Msg(false, msg.optString("text"), msg.optDouble("ts", now())))
-                lastKey = cid.toString()
-                historyLocalCounter = entry.getInt("id")
-            } catch (_: Exception) {}
-        }
-        saveProfile()
-        bump()
-        if (lastKey.isNotEmpty() && current == lastKey.toIntOrNull()) {
-            bump()
-        }
-        _uploadLocalHistory()
-    }
+    // Der Server speichert nur Chiffretext (NaCl Box zwischen mir und dem Kontakt).
+    private fun hkey(me: Boolean, ts: Double, text: String) = "$me|${Math.round(ts * 1000)}|$text"
 
-    private fun _uploadLocalHistory() {
-        val entries = mutableListOf<JSONObject>()
-        val h = obj("history")
-        h.keys().forEach { cidStr ->
-            val cid = cidStr.toIntOrNull() ?: return@forEach
-            val pk = keys().optString(cidStr).ifEmpty { return@forEach }
-            val arr = h.optJSONArray(cidStr) ?: return@forEach
-            for (i in 0 until arr.length()) {
-                val msg = arr.getJSONObject(i)
-                val text = msg.optString("text")
-                val ts = msg.optDouble("ts", now())
-                val encBody = Crypto.b64e(Crypto.boxEncrypt(priv!!, Crypto.b64d(pk),
-                    JSONObject().put("text", text).put("ts", ts).toString().toByteArray(Charsets.UTF_8)))
-                entries.add(JSONObject().put("contact_id", cid).put("blob", encBody).put("ts", ts))
+    private fun decryptFor(cid: Int, blob: String): String? = try {
+        val pk = keys().optString(cid.toString()).ifEmpty { null }
+        if (pk == null) null
+        else JSONObject(String(Crypto.boxDecrypt(priv!!, Crypto.b64d(pk), Crypto.b64d(blob)), Charsets.UTF_8)).optString("text")
+    } catch (_: Exception) { null }
+
+    private fun historyMerge(d: JSONObject) {
+        d.optJSONObject("users")?.let { users ->
+            users.keys().forEach { k ->
+                val u = users.optJSONObject(k)
+                if (u != null) {
+                    val pk = u.optString("pubkey")
+                    if (pk.isNotEmpty() && !keys().has(k)) keys().put(k, pk)
+                    val nick = u.optString("nick")
+                    if (nick.isNotEmpty() && !names().has(k)) names().put(k, nick)
+                }
             }
         }
-        if (entries.isEmpty()) {
-            send(JSONObject().put("t", "history_updated").put("counter", historyLocalCounter))
-        } else {
-            send(JSONObject().put("t", "history_upload").put("entries", JSONArray().apply { entries.forEach { put(it) } }))
+        val delta = d.optJSONArray("delta") ?: JSONArray()
+        val touched = HashSet<Int>()
+        val byCid = HashMap<Int, HashMap<String, Msg>>()
+        val seen = HashMap<Int, HashSet<String>>()
+        for (i in 0 until delta.length()) {
+            val e = delta.getJSONObject(i)
+            val cid = e.getInt("contact_id")
+            val text = decryptFor(cid, e.getString("blob")) ?: continue
+            val list = history(cid)
+            val cids = byCid.getOrPut(cid) { HashMap<String, Msg>().also { m -> list.forEach { x -> x.cid?.let { m[it] = x } } } }
+            val keysSeen = seen.getOrPut(cid) { HashSet<String>().also { k -> list.filter { !it.sys }.forEach { k.add(hkey(it.me, it.ts, it.text)) } } }
+            val out = e.optBoolean("out")
+            val mcid = if (e.isNull("cid")) "" else e.optString("cid")
+            val hid = e.getInt("id")
+            val ts = e.getDouble("ts")
+            if (out && mcid.isNotEmpty()) {
+                val existing = cids[mcid]
+                if (existing != null) {
+                    if (existing.state == null || existing.state == "sending") existing.state = "sent"
+                    if (existing.h == null) existing.h = hid
+                    continue
+                }
+            }
+            val k = hkey(out, ts, text)
+            if (k in keysSeen) continue
+            val m = Msg(out, text, ts, mcid.ifEmpty { null }, if (out) "sent" else null, h = hid)
+            list.add(m); keysSeen.add(k); touched.add(cid)
+            if (mcid.isNotEmpty()) cids[mcid] = m
         }
+        for (cid in touched) history(cid).sortBy { it.ts }
+        profile.put("history_last", maxOf(profile.optInt("history_last", 0), d.optInt("last", 0)))
+        saveProfile()
+        if (d.optBoolean("more")) send(JSONObject().put("t", "history_delta").put("since", profile.optInt("history_last", 0)))
+        else if (!profile.optBoolean("legacy_uploaded")) historyUploadStart()
+    }
+
+    /** Einmalig: lokalen Verlauf von vor 1.1.2 hochladen, damit andere Geräte ihn sehen. */
+    private fun historyUploadStart() {
+        val sk = priv ?: return
+        val cutoff = profile.optDouble("sync_start", now())
+        uploadQueue.clear()
+        var chunk = ArrayList<Pair<JSONObject, Msg>>(); var size = 0
+        val ids = obj("history").keys().asSequence().toList() + historyCache.keys
+        for (key in ids.distinct()) {
+            val cid = key.toIntOrNull() ?: continue
+            val pk = keys().optString(key).ifEmpty { null } ?: continue
+            for (m in history(cid)) {
+                if (m.sys || m.h != null || m.ts >= cutoff || m.state == "sending" || m.state == "failed") continue
+                val body = JSONObject().put("text", m.text).put("ts", m.ts).toString().toByteArray(Charsets.UTF_8)
+                val blob = Crypto.b64e(Crypto.boxEncrypt(sk, Crypto.b64d(pk), body))
+                if (chunk.isNotEmpty() && (chunk.size >= 150 || size + blob.length > 90000)) {
+                    uploadQueue.add(chunk); chunk = ArrayList(); size = 0
+                }
+                chunk.add(JSONObject().put("contact_id", cid).put("out", m.me).put("blob", blob).put("ts", m.ts) to m)
+                size += blob.length + 80
+            }
+        }
+        if (chunk.isNotEmpty()) uploadQueue.add(chunk)
+        historyUploadNext(true)
+    }
+
+    private fun historyUploadNext(first: Boolean) {
+        if (!first && uploadQueue.isNotEmpty()) uploadQueue.removeAt(0).forEach { it.second.h = 0 }
+        if (uploadQueue.isNotEmpty()) {
+            send(JSONObject().put("t", "history_upload").put("hv", 2)
+                .put("entries", JSONArray().apply { uploadQueue[0].forEach { put(it.first) } }))
+        } else if (!profile.optBoolean("legacy_uploaded")) {
+            profile.put("legacy_uploaded", true); saveProfile()
+        } else saveProfile()
+    }
+
+    /** Nachricht, die ich auf einem anderen Gerät gesendet habe. */
+    private fun msgCopy(d: JSONObject) {
+        val to = d.getInt("to"); val key = to.toString()
+        d.optString("to_pubkey").takeIf { it.isNotEmpty() && !keys().has(key) }?.let { keys().put(key, it) }
+        d.optString("to_nick").takeIf { it.isNotEmpty() }?.let { names().put(key, it) }
+        val text = decryptFor(to, d.getString("payload")) ?: return
+        val cid = if (d.isNull("cid")) "" else d.optString("cid")
+        if (cid.isNotEmpty() && findCid(cid) != null) return
+        history(to).add(Msg(true, text, d.optDouble("ts", now()), cid.ifEmpty { null }, "sent",
+            h = if (d.has("hid")) d.optInt("hid") else 0))
+        saveProfile()
     }
 
     // ------------------------------------------------------------------ Konto

@@ -1,6 +1,46 @@
 name: Herbstchat Clients bauen
 on: [push, workflow_dispatch]
 jobs:
+  # Server: Protokoll-Selbsttest + Debian-Paket. Bei Versions-Tag wird hier auch das Release angelegt,
+  # damit die Client-Jobs ihre Dateien sofort anhängen können.
+  server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Selbsttest
+        run: pip install -q aiohttp pynacl && python server/test_server.py
+      - name: Versionen prüfen
+        shell: bash
+        run: |
+          s=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' server/herbstchat_server.py)
+          c=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' client/herbstchat.py)
+          a=$(sed -n 's/^const val VERSION = "\(.*\)"/\1/p' android/app/src/main/java/org/herbstleyd/herbstchat/Store.kt)
+          g=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' android/app/build.gradle.kts)
+          echo "Server $s | Desktop $c | Android $a | Gradle $g"
+          [ "$s" = "$c" ] && [ "$s" = "$a" ] && [ "$s" = "$g" ] || { echo "::error::Versionsnummern sind nicht einheitlich"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "v$s" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $s"; exit 1; fi
+          echo "HC_VERSION=$s" >> "$GITHUB_ENV"
+      - name: Debian-Paket bauen
+        run: ./server/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Herbstchat-Server
+          path: server/herbstchat-server_*_all.deb
+      - name: Release anlegen
+        if: startsWith(github.ref, 'refs/tags/v')
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          sed "s/@VERSION@/$HC_VERSION/g" .github/release-notes.md > notes.md
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "Herbstchat $HC_VERSION" --notes-file notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" server/herbstchat-server_*_all.deb --clobber
+
   build:
     strategy:
       fail-fast: false
@@ -46,12 +86,14 @@ jobs:
             macOS)   f=Herbstchat-macOS.zip ;;
             Linux)   f=Herbstchat-Linux-x86_64; cp Herbstchat "$f" ;;
           esac
-          for i in $(seq 1 60); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 20; done
+          # Release wird vom Job "server" angelegt (dauert ca. 1 Minute)
+          for i in $(seq 1 30); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 20; done
           gh release upload "$GITHUB_REF_NAME" "$f" --clobber
-
 
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -62,25 +104,18 @@ jobs:
       - name: APK bauen
         working-directory: android
         env: { HC_KEYSTORE_PASSWORD: "${{ secrets.HC_KEYSTORE_PASSWORD }}" }
-        run: ./gradlew assembleRelease --no-daemon && cp app/build/outputs/apk/release/app-release.apk Herbstchat-1.1.1.apk
+        run: |
+          v=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "Herbstchat-$v.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: Herbstchat-Android
-          path: android/Herbstchat-1.1.1.apk
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { name: Herbstchat-Android, path: rel }
-      - name: Release anlegen (APK + Server)
+          path: android/Herbstchat-*.apk
+      - name: Ans Release anhängen
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: android
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          cp herbstchat-server_1.0.0_all.deb rel/
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then gh release upload "$GITHUB_REF_NAME" rel/* --clobber
-          else gh release create "$GITHUB_REF_NAME" rel/* --title "Herbstchat ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md; fi
+          for i in $(seq 1 30); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 20; done
+          gh release upload "$GITHUB_REF_NAME" Herbstchat-*.apk --clobber
