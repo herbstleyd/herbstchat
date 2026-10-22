@@ -1,19 +1,23 @@
-<div align="center">
+# Herbstchat
 
-# 🍂 Herbstchat
+```
+  _   _           _         _       _           _
+ | | | | ___ _ __| |__  ___| |_ ___| |__   __ _| |_
+ | |_| |/ _ \ '__| '_ \/ __| __/ __| '_ \ / _` | __|
+ |  _  |  __/ |  | |_) \__ \ || (__| | | | (_| | |_
+ |_| |_|\___|_|  |_.__/|___/\__\___|_| |_|\__,_|\__|
 
-**Privater Instant Messenger mit Ende-zu-Ende-Verschlüsselung**
-
-Eigener Server · Desktop-Apps für Windows, macOS und Linux · Android-App
+   Privater Instant Messenger mit Ende-zu-Ende-Verschluesselung
+   Eigener Server | Windows | macOS | Linux | Android
+```
 
 [![Release](https://img.shields.io/github/v/release/herbstleyd/herbstchat?label=Version&color=c8641e)](https://github.com/herbstleyd/herbstchat/releases/latest)
 ![Plattformen](https://img.shields.io/badge/Plattformen-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-555)
 ![Verschlüsselung](https://img.shields.io/badge/E2EE-X25519%20%2B%20XSalsa20--Poly1305-3bb54a)
+[![Lizenz](https://img.shields.io/badge/Lizenz-0BSD-blue)](LICENSE)
 
 <!-- SCREENSHOT: Hauptfenster Desktop (z. B. docs/screenshots/desktop-hauptfenster.png) -->
 <!-- ![Herbstchat Desktop](docs/screenshots/desktop-hauptfenster.png) -->
-
-</div>
 
 ---
 
@@ -34,6 +38,7 @@ Eigener Server · Desktop-Apps für Windows, macOS und Linux · Android-App
 - [Selbst bauen](#selbst-bauen)
 - [Grenzen und Hinweise](#grenzen-und-hinweise)
 - [Häufige Fragen](#häufige-fragen)
+- [Lizenz](#lizenz)
 
 ---
 
@@ -43,6 +48,29 @@ Herbstchat ist ein kleiner, privater Messenger für Familie, Freunde oder ein Te
 
 Jede Nachricht wird **auf dem Gerät des Absenders verschlüsselt** und erst auf dem Gerät des Empfängers wieder entschlüsselt. Der Server leitet nur Daten weiter, die er selbst nicht lesen kann. Das gilt auch für den Administrator: Nachrichteninhalte und Passwörter bekommt er nie zu sehen.
 
+```
+   +-----------+   +-----------+   +-----------+   +-----------+
+   |  Windows  |   |   macOS   |   |   Linux   |   |  Android  |
+   |  Client   |   |  Client   |   |  Client   |   |    App    |
+   +-----+-----+   +-----+-----+   +-----+-----+   +-----+-----+
+         |               |               |               |
+         +-------+-------+-------+-------+-------+-------+
+                 |   WebSocket ueber TLS, Port 47474     |
+                 |   (nur verschluesselte Nachrichten)   |
+                 v                                       v
+         +-----------------------------------------------------+
+         |              herbstchat-server (Python)             |
+         |   aiohttp  +  SQLite  (/var/lib/herbstchat/*.db)    |
+         +--------------------------+--------------------------+
+                                    |
+                                    | HTTP, Port 8088, nur LAN
+                                    v
+                          +-------------------+
+                          |  Admin-Oberflaeche|
+                          |  (Browser)        |
+                          +-------------------+
+```
+
 Optisch und vom Gefühl her orientiert sich Herbstchat an den klassischen Messengern der 2000er (Kontaktliste, Online-Status, „Uh-oh“-Ton), nutzt aber moderne Kryptografie.
 
 ---
@@ -51,28 +79,28 @@ Optisch und vom Gefühl her orientiert sich Herbstchat an den klassischen Messen
 
 ### Für Nutzer
 
-- 🔒 **Ende-zu-Ende-Verschlüsselung** für alle Nachrichten (NaCl/libsodium)
-- 👥 **Kontaktliste** mit Suche nach Nicknamen, Hinzufügen und Entfernen
-- 🟢 **Online-Status:** Online, Abwesend, Beschäftigt, Unsichtbar
-- ✉️ **Offline-Nachrichten:** Nachrichten an Kontakte, die gerade offline sind, werden verschlüsselt zwischengespeichert und beim nächsten Login zugestellt
-- ✍️ **Tipp-Anzeige** („schreibt …“), abschaltbar
-- ✓ **Zustellstatus** pro Nachricht: wird gesendet ⏳, gesendet ✓, wartet auf Empfänger ✉, fehlgeschlagen ⚠
-- 🔁 **Chatverlauf auf allen Geräten:** Desktop und Handy zeigen denselben Verlauf, auch für selbst gesendete Nachrichten
-- 🛡️ **Sicherheitsnummer** zum Prüfen eines Kontakts und eigener **Schlüssel-Fingerabdruck**
-- ⚠️ **Warnung bei Schlüsselwechsel** (Desktop): Ändert sich der Schlüssel eines Kontakts, erscheint ein Hinweis im Chat
-- 📌 **Zertifikat-Pinning** (Trust-On-First-Use) gegen Man-in-the-Middle-Angriffe
-- 🔔 **Benachrichtigungen** mit optionaler Vorschau, Töne, Taskleisten-Blinken, Tray-Symbol
-- 🎨 **Dunkles und helles Design**, Akzentfarbe, Schriftart und -größe einstellbar
-- 🔑 **Passwort und E-Mail-Adresse ändern** direkt in der App
+- **Ende-zu-Ende-Verschlüsselung** für alle Nachrichten (NaCl/libsodium)
+- **Kontaktliste** mit Suche nach Nicknamen, Hinzufügen und Entfernen
+- **Online-Status:** Online, Abwesend, Beschäftigt, Unsichtbar
+- **Offline-Nachrichten:** Nachrichten an Kontakte, die gerade offline sind, werden verschlüsselt zwischengespeichert und beim nächsten Login zugestellt
+- **Tipp-Anzeige** („schreibt …“), abschaltbar
+- **Zustellstatus** pro Nachricht: wird gesendet, gesendet, wartet auf den Empfänger, fehlgeschlagen
+- **Chatverlauf auf allen Geräten:** Desktop und Handy zeigen denselben Verlauf, auch für selbst gesendete Nachrichten
+- **Sicherheitsnummer** zum Prüfen eines Kontakts und eigener **Schlüssel-Fingerabdruck**
+- **Warnung bei Schlüsselwechsel** (Desktop): Ändert sich der Schlüssel eines Kontakts, erscheint ein Hinweis im Chat
+- **Zertifikat-Pinning** (Trust-On-First-Use) gegen Man-in-the-Middle-Angriffe
+- **Benachrichtigungen** mit optionaler Vorschau, Töne, Taskleisten-Blinken, Tray-Symbol
+- **Dunkles und helles Design**, Akzentfarbe, Schriftart und -größe einstellbar
+- **Passwort und E-Mail-Adresse ändern** direkt in der App
 
 ### Für den Betreiber
 
-- 📦 **Debian-Paket** mit systemd-Dienst, automatisch erzeugtem TLS-Zertifikat und Admin-Zugang
-- 🖥️ **Admin-Weboberfläche** (nur im lokalen Netz): Dashboard, Benutzerverwaltung, Rundschreiben, Einstellungen, Protokoll, Debug
-- 🚫 **Moderation:** Timeout, Bann, Stummschalten, Verbindung trennen, Nickname/E-Mail ändern, Account löschen
-- 📢 **Systemnachrichten** an einzelne oder alle Nutzer, optional zusätzlich per E-Mail (SMTP)
-- 📝 **Nachricht des Tages** beim Login und **Registrierung schließen** auf Knopfdruck
-- 🧱 **Schutz vor Brute-Force:** 10 Fehlversuche innerhalb von 10 Minuten sperren die IP-Adresse vorübergehend
+- **Debian-Paket** mit systemd-Dienst, automatisch erzeugtem TLS-Zertifikat und Admin-Zugang
+- **Admin-Weboberfläche** (nur im lokalen Netz): Dashboard, Benutzerverwaltung, Rundschreiben, Einstellungen, Protokoll, Debug
+- **Moderation:** Timeout, Bann, Stummschalten, Verbindung trennen, Nickname/E-Mail ändern, Account löschen
+- **Systemnachrichten** an einzelne oder alle Nutzer, optional zusätzlich per E-Mail (SMTP)
+- **Nachricht des Tages** beim Login und **Registrierung schließen** auf Knopfdruck
+- **Schutz vor Brute-Force:** 10 Fehlversuche innerhalb von 10 Minuten sperren die IP-Adresse vorübergehend
 
 <!-- SCREENSHOT: Kontaktliste + Chat (docs/screenshots/desktop-chat.png) -->
 
@@ -138,22 +166,22 @@ Herbstchat verwendet ausschließlich bewährte Bausteine aus **[libsodium](https
 ### Überblick
 
 ```
-   Passwort
-      │
-      ▼
- ┌──────────┐   Salt (pro Benutzer, 16 Byte)
- │ Argon2id │◄──────────────────────────────
- └────┬─────┘
-      │ 64 Byte
-      ├──────────────────────────┐
-      ▼                          ▼
- Auth-Schlüssel (32 B)     Tresor-Schlüssel (32 B)
- → wird an den Server      → verlässt das Gerät NIE
-   gesendet (Login)          │
-                             ▼
-                   verschlüsselt den privaten
-                   X25519-Schlüssel (SecretBox)
-                   und das lokale Profil
+                     Passwort (nur im Kopf und kurz im RAM)
+                         |
+                         v
+   Salt (16 Byte) --> [ Argon2id ]   64 MiB RAM, opslimit MODERATE
+                         |
+                         | 64 Byte
+              +----------+-----------+
+              |                      |
+              v                      v
+     Auth-Schluessel (32 B)    Tresor-Schluessel (32 B)
+              |                      |
+              | geht zum Server      | verlaesst das Geraet NIE
+              v                      v
+     Server speichert nur      [ SecretBox ] verschluesselt:
+     scrypt(Auth, Salt2)         - privaten X25519-Schluessel
+                                 - lokales Profil (Verlauf, Kontakte)
 ```
 
 ### 1. Aus dem Passwort werden zwei Schlüssel
@@ -185,7 +213,33 @@ Jede Nachricht wird mit **`crypto_box`** verschlüsselt:
 - **Poly1305** als Prüfsumme, damit niemand die Nachricht unbemerkt verändern kann
 - Eine **zufällige Nonce (24 Byte)** pro Nachricht
 
-Format auf dem Draht: `Nonce (24 Byte) ‖ Chiffretext ‖ MAC (16 Byte)`, Base64-codiert. Desktop- und Android-App sind byte-genau kompatibel.
+```
+     Alice (Geraet)                Server                 Bob (Geraet)
+  +------------------+                               +------------------+
+  |  "Hallo Bob"     |                               |  "Hallo Bob"     |
+  |       |          |                               |       ^          |
+  |       v          |                               |       |          |
+  |  crypto_box      |                               |  crypto_box_open |
+  |  Alice privat    |                               |  Bob privat      |
+  |  Bob oeffentlich |                               |  Alice oeffentl. |
+  |  + Zufalls-Nonce |                               |                  |
+  |       |          |                               |       ^          |
+  |       v          |       +---------------+       |       |          |
+  |   a8f3...9c1e  --+-TLS-->|  a8f3...9c1e  |--TLS--+-> a8f3...9c1e    |
+  +------------------+       |  (unlesbar)   |       +------------------+
+                             +---------------+
+         Der Server sieht nur Absender, Empfaenger, Zeitpunkt und
+         Groesse der Nachricht - niemals den Inhalt.
+```
+
+Format auf dem Draht (Base64-codiert):
+
+```
+  +----------------+---------------------------+-------------+
+  | Nonce 24 Byte  | Chiffretext (Laenge = n)  | MAC 16 Byte |
+  +----------------+---------------------------+-------------+
+```
+ Desktop- und Android-App sind byte-genau kompatibel.
 
 ### 4. Die Transportverbindung ist zusätzlich TLS-geschützt
 
@@ -194,6 +248,18 @@ Die Verbindung zum Server läuft als **WebSocket über TLS**. Weil der Server ei
 1. Beim ersten Verbinden wird der SHA-256-Fingerabdruck des Zertifikats angezeigt.
 2. Nach deiner Bestätigung merkt sich die App diesen Fingerabdruck.
 3. Ändert er sich später, **bricht die App mit einer deutlichen Warnung ab**, statt einfach weiterzumachen.
+
+```
+  Erste Verbindung                    Jede weitere Verbindung
+  ----------------                    -----------------------
+  App --TLS--> Server                 App --TLS--> Server
+   |                                   |
+   | Fingerabdruck anzeigen            | Fingerabdruck == gespeichert ?
+   | Nutzer vergleicht mit             |
+   | zertifikat-fingerabdruck.txt      +-- ja   --> verbinden
+   |                                   |
+   +-- bestaetigt --> Pin speichern    +-- nein --> WARNUNG, Abbruch
+```
 
 Die Pins lassen sich in den Optionen zurücksetzen, falls das Zertifikat absichtlich erneuert wurde.
 
@@ -238,6 +304,21 @@ Wer den Server betreibt, sollte das wissen und den Nutzern gegenüber offen dami
 Ab Version **1.1.2** wird der Verlauf zwischen allen Geräten eines Kontos abgeglichen, zum Beispiel zwischen PC und Handy.
 
 So funktioniert es:
+
+```
+                 Server: Tabelle "history" (nur Chiffretext)
+            +--------------------------------------------------+
+  Alice --> | user=Alice  nr=41  ausgehend  an Bob    a8f3...  |
+  sendet    | user=Bob    nr=17  eingehend  von Alice a8f3...  |
+            +--------------------------------------------------+
+                  |                                   |
+     history_delta(since=40)              history_delta(since=16)
+                  |                                   |
+          +-------+-------+                   +-------+-------+
+          v               v                   v               v
+     Alice-PC       Alice-Handy           Bob-PC         Bob-Handy
+      merkt sich: "bis nr=41"              merkt sich: "bis nr=17"
+```
 
 1. Wenn du eine Nachricht schickst, legt der Server **zwei verschlüsselte Einträge** an: einen eingehenden beim Empfänger und einen ausgehenden bei dir. Beide enthalten nur den Chiffretext, den der Server ohnehin weiterleitet.
 2. Jeder Eintrag bekommt eine fortlaufende Nummer pro Benutzer. Jedes Gerät merkt sich, bis zu welcher Nummer es schon alles hat.
@@ -398,28 +479,28 @@ Native App in **Kotlin mit Jetpack Compose**, ab **Android 8.0** (API 26). Sie n
 
 ```
 herbstchat/
-├── server/
-│   ├── herbstchat_server.py     # Chat-Server + Admin-Oberfläche
-│   ├── test_server.py           # Selbsttest (Registrierung, Login, Nachrichten, Sync)
-│   ├── build-deb.sh             # baut das Debian-Paket
-│   └── debian/                  # Paketdateien (control, postinst, systemd-Unit, server.conf …)
-├── client/
-│   ├── herbstchat.py            # Desktop-Client (PySide6 + PyNaCl)
-│   ├── build.py                 # PyInstaller-Build für das aktuelle System
-│   ├── requirements.txt
-│   ├── start-linux.sh / start-macos.command / start-windows.bat
-│   └── herbstchat.desktop       # Startmenü-Eintrag für Linux
-├── android/                     # Android-App (Kotlin, Jetpack Compose)
-│   └── app/src/main/java/org/herbstleyd/herbstchat/
-│       ├── Crypto.kt            # Argon2id, SecretBox, Box, Sicherheitsnummer
-│       ├── Connection.kt        # WebSocket über TLS mit Zertifikat-Pinning
-│       ├── ChatCore.kt          # Protokoll und App-Zustand
-│       ├── ChatService.kt       # Vordergrund-Dienst
-│       ├── Store.kt             # Einstellungen, Pins, Sitzung, Profil
-│       └── Ui.kt                # Oberfläche
-├── .github/workflows/build-clients.yml   # CI: Tests, Builds, Release
-├── INSTALLATION.md
-└── README.md
+|-- server/
+|   |-- herbstchat_server.py     # Chat-Server + Admin-Oberfläche
+|   |-- test_server.py           # Selbsttest (Registrierung, Login, Nachrichten, Sync)
+|   |-- build-deb.sh             # baut das Debian-Paket
+|   `-- debian/                  # Paketdateien (control, postinst, systemd-Unit, server.conf …)
+|-- client/
+|   |-- herbstchat.py            # Desktop-Client (PySide6 + PyNaCl)
+|   |-- build.py                 # PyInstaller-Build für das aktuelle System
+|   |-- requirements.txt
+|   |-- start-linux.sh / start-macos.command / start-windows.bat
+|   `-- herbstchat.desktop       # Startmenü-Eintrag für Linux
+|-- android/                     # Android-App (Kotlin, Jetpack Compose)
+|   `-- app/src/main/java/org/herbstleyd/herbstchat/
+|       |-- Crypto.kt            # Argon2id, SecretBox, Box, Sicherheitsnummer
+|       |-- Connection.kt        # WebSocket über TLS mit Zertifikat-Pinning
+|       |-- ChatCore.kt          # Protokoll und App-Zustand
+|       |-- ChatService.kt       # Vordergrund-Dienst
+|       |-- Store.kt             # Einstellungen, Pins, Sitzung, Profil
+|       `-- Ui.kt                # Oberfläche
+|-- .github/workflows/build-clients.yml   # CI: Tests, Builds, Release
+|-- INSTALLATION.md
+`-- README.md
 ```
 
 ---
@@ -499,8 +580,26 @@ Server und App müssen dieselbe Version haben. Bitte alles auf den neuesten Rele
 
 ---
 
-<div align="center">
+## Lizenz
 
-Gemacht mit 🍂 von **Herbstleyd** · [herbstleyd.org](https://herbstleyd.org)
+Herbstchat steht unter der **[BSD Zero Clause License (0BSD)](LICENSE)**.
 
-</div>
+```
++-------------------------------------------------------------+
+|  Jeder darf den Code und die Programme                      |
+|                                                             |
+|    [x] benutzen          [x] veraendern                     |
+|    [x] kopieren          [x] weitergeben                    |
+|    [x] verkaufen         [x] in eigene Projekte einbauen    |
+|                                                             |
+|  ... ohne Bedingungen: kein Namensnennungs-Zwang, keine     |
+|  Pflicht, den Lizenztext mitzuliefern oder Code offen-      |
+|  zulegen. Ausgeschlossen sind nur Garantie und Haftung.     |
++-------------------------------------------------------------+
+```
+
+---
+
+```
+  Herbstchat  -  von Herbstleyd  -  https://herbstleyd.org
+```
