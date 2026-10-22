@@ -404,21 +404,38 @@ class ChatServer:
 
 
 # --------------------------------------------------------------------------- Admin web
-CSS = """
-body{font-family:system-ui,Segoe UI,sans-serif;margin:0;background:#f4f1ec;color:#2b2b2b}
-header{background:linear-gradient(90deg,#b5541c,#d98c2b);color:#fff;padding:14px 24px;display:flex;gap:24px;align-items:center}
-header a{color:#fff;text-decoration:none;font-weight:500}header h1{margin:0;font-size:20px;margin-right:auto}
-main{padding:24px;max-width:1300px;margin:auto}
-.card{background:#fff;border-radius:10px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px #0002}
-table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:7px 8px;border-bottom:1px solid #eee;text-align:left}
-th{background:#faf6f0}tr:hover td{background:#fffaf3}
-.b{display:inline-block;padding:2px 8px;border-radius:9px;font-size:12px;color:#fff}
-.on{background:#3a9b4c}.off{background:#999}.ban{background:#c0392b}.to{background:#e67e22}.mu{background:#8e44ad}
-input,select,textarea,button{font:inherit;padding:6px 9px;border:1px solid #ccc;border-radius:6px}
-button{background:#b5541c;color:#fff;border:none;cursor:pointer}button.sec{background:#777}button.danger{background:#c0392b}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
-.stat{font-size:28px;font-weight:700;color:#b5541c}form.inline{display:inline}
-.flash{background:#e8f6ea;border-left:4px solid #3a9b4c;padding:10px;margin-bottom:14px}
+CSS = r"""
+:root{--bg:#f5f5f7;--text:#1d1d1f;--card:#ffffff;--primary:#6c5ce7;--primary-hover:#5b4cdb;--accent:#00cec9;
+--danger:#d63031;--success:#27ae60;--muted:#777;--radius:12px;--shadow:0 2px 8px #00000014;--sidebar-w:220px}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+aside{width:var(--sidebar-w);background:#fff;padding-top:20px;position:fixed;top:0;left:0;bottom:0;border-right:1px solid #e0e0e0;overflow-y:auto}
+aside h2{margin:0 0 16px;font-size:15px;text-align:center;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)}
+aside a{display:block;padding:10px 22px;color:var(--text);text-decoration:none;font-size:14px;font-weight:500;border-left:3px solid transparent}
+aside a:hover,aside a.active{background:#f0eeff;border-left-color:var(--primary);color:var(--primary)}
+aside .logo{text-align:center;font-size:22px;padding:12px 0 12px 0;font-weight:700;color:var(--primary)}
+main{margin-left:var(--sidebar-w);padding:32px;max-width:1200px;width:100%}
+.card{background:var(--card);border-radius:var(--radius);padding:20px;margin-bottom:20px;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px 10px;border-bottom:1px solid #f1f1f1;text-align:left}
+th{background:#fafafa;font-weight:600;font-size:13px;text-transform:uppercase;color:var(--muted);letter-spacing:.3px}
+tr:hover td{background:#f8f7ff}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;color:#fff;letter-spacing:.3px}
+.b-on{background:var(--success)}.b-off{background:#b2bec3}.b-ban{background:var(--danger)}.b-to{background:#e17055}.b-mu{background:6c5ce7}
+input,select,textarea{font:inherit;padding:8px 12px;border:1px solid #dcdde1;border-radius:8px;outline:none;transition:border .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--primary)}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:500;transition:background .2s}
+button:hover{background:var(--primary-hover)}button.sec{background:#dcdde1;color:var(--text)}button.sec:hover{background:#b2bec3}
+button.danger{background:var(--danger)}button.danger:hover{background:#c0392b}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+.stat{font-size:30px;font-weight:700;color:var(--primary)}
+.flash{background:var(--success);color:#fff;border-radius:8px;padding:12px;margin-bottom:16px}
+h3{margin:0 0 14px;font-size:16px;font-weight:600}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:14px}
+.kv kbd{font-weight:600;color:var(--muted)}form.inline{display:inline}
+a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
+.debug-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f5;font-size:14px}
+.debug-row kbd{color:var(--muted)}
+.progress-wrap{background:#eee;border-radius:8px;height:10px;overflow:hidden}
+.progress-bar{background:var(--primary);height:100%;border-radius:8px;transition:width .4s}
 """
 
 
@@ -457,13 +474,18 @@ class AdminSite:
                 return web.Response(status=400, text="Ungültiges Formular (CSRF).")
         return await handler(request)
 
-    def page(self, title, body, flash=""):
+    NAV = [("/", "Dashboard"), ("/users", "Benutzer"), ("/broadcast", "Rundschreiben"),
+           ("/settings", "Einstellungen"), ("/log", "Protokoll"), ("/debug", "Debug")]
+
+    def sidebar(self, path):
+        links = ''.join(f'<a href="{p}" class="{"active" if path.startswith(p.rstrip("/")) else ""}">{n}</a>' for p, n in self.NAV)
+        return f'<aside><div class="logo">🍂 Herbstchat</div><h2>Admin</h2>{links}<div style="padding:14px 22px;font-size:12px;color:#aaa">v{VERSION}</div></aside>'
+
+    def page(self, title, body, flash="", path="/"):
         f = f'<div class="flash">{html.escape(flash)}</div>' if flash else ""
         return web.Response(content_type="text/html", text=f"""<!doctype html><html lang=de><head>
 <meta charset=utf-8><title>{html.escape(title)} - Herbstchat Admin</title><style>{CSS}</style></head><body>
-<header><h1>Herbstchat Admin</h1><a href="/">Dashboard</a><a href="/users">Benutzer</a>
-<a href="/broadcast">Rundschreiben</a><a href="/settings">Einstellungen</a><a href="/log">Protokoll</a></header>
-<main>{f}{body}</main></body></html>""")
+{self.sidebar(path)}<main>{f}{body}</main></body></html>""")
 
     def hid(self):
         return f'<input type=hidden name=csrf value="{self.csrf}">'
@@ -499,7 +521,7 @@ class AdminSite:
         return self.page("Dashboard", f"""<div class=grid>{cards}</div>
 <div class=card><h3>Letzte Ereignisse</h3><table>{recent}</table></div>
 <div class=card>Server-Adresse für Clients: <b>{html.escape(self.cfg['server']['public_address'])}:{self.cfg['server']['port']}</b>
-&nbsp;|&nbsp; Version {VERSION}</div>""", request.query.get("m", ""))
+&nbsp;|&nbsp; Version {VERSION}</div>""", request.query.get("m", ""), path="/")
 
     async def users(self, request):
         q = request.query.get("q", "")
@@ -524,7 +546,7 @@ class AdminSite:
 <option value=login>Letzter Login</option><option value=msgs>Meiste Nachrichten</option></select>
 <button>Suchen</button> <a href="/export.csv">E-Mail-Liste als CSV exportieren</a></form></div>
 <div class=card><b>{len(rows)}</b> Benutzer<table><tr><th>ID</th><th>Nickname</th><th>E-Mail</th><th>Status</th>
-<th>Registriert</th><th>Letzter Login</th><th>Nachr.</th></tr>{tr}</table></div>""", request.query.get("m", ""))
+<th>Registriert</th><th>Letzter Login</th><th>Nachr.</th></tr>{tr}</table></div>""", request.query.get("m", ""), path="/users")
 
     async def user(self, request):
         uid = int(request.match_info["id"])
@@ -571,7 +593,7 @@ class AdminSite:
 <form method=post action="{a}" class=inline>{h}<input type=hidden name=do value=purge><button class=sec>Offline-Nachrichten verwerfen</button></form>
 <form method=post action="{a}" class=inline onsubmit="return confirm('Account wirklich endgültig löschen?')">{h}
 <input type=hidden name=do value=delete><button class=danger>Account löschen</button></form></div></div>"""
-        return self.page(u["nick"], body, request.query.get("m", ""))
+        return self.page(u["nick"], body, request.query.get("m", ""), path="/user")
 
     async def user_action(self, request):
         uid = int(request.match_info["id"])
@@ -655,7 +677,7 @@ class AdminSite:
 <p><label><input type=checkbox name=inapp value=1 checked> als Systemnachricht an alle Online-User</label><br>
 <label><input type=checkbox name=mail value=1> per E-Mail an alle User (SMTP muss in server.conf eingerichtet sein)</label><br>
 <label><input type=checkbox name=excl_banned value=1 checked> gebannte User ausschließen</label></p><button>Senden</button></form></div>""",
-                         request.query.get("m", ""))
+                          request.query.get("m", ""), path="/broadcast")
 
     async def broadcast_post(self, request):
         d = await request.post()
@@ -679,10 +701,8 @@ class AdminSite:
 <form method=post action="/settings">{h}<input type=hidden name=do value=motd><textarea name=motd rows=3 style="width:95%">{html.escape(motd['v'] if motd else '')}</textarea><br><button>Speichern</button></form></div>
 <div class=card><h3>Registrierung</h3><form method=post action="/settings">{h}<input type=hidden name=do value=reg>
 <label><input type=checkbox name=closed value=1 {"checked" if closed else ""}> Neue Registrierungen sperren</label> <button>Speichern</button></form></div>
-<div class=card><h3>Test-E-Mail</h3><form method=post action="/settings">{h}<input type=hidden name=do value=mailtest>
-<input name=to type=email placeholder="deine@adresse.de" required> <button>Senden</button></form></div>
 <div class=card><h3>Wartung</h3><form method=post action="/settings">{h}<input type=hidden name=do value=vacuum><button class=sec>Datenbank optimieren (VACUUM)</button></form></div>""",
-                         request.query.get("m", ""))
+                          request.query.get("m", ""), path="/settings")
 
     async def settings_post(self, request):
         d = await request.post()
@@ -700,7 +720,76 @@ class AdminSite:
     async def logpage(self, request):
         tr = "".join(f"<tr><td>{self.ft(r['ts'])}</td><td>{html.escape(r['text'])}</td></tr>"
                      for r in self.db.all("SELECT * FROM auditlog ORDER BY id DESC LIMIT 500"))
-        return self.page("Protokoll", f"<div class=card><h3>Protokoll (letzte 500)</h3><table>{tr}</table></div>")
+        return self.page("Protokoll", f"<div class=card><h3>Protokoll (letzte 500)</h3><table>{tr}</table></div>", path="/log")
+
+    async def debugpage(self, request):
+        import platform, resource
+        db = self.db
+        dbpath = self.cfg["server"]["database"]
+        dbsize = os.path.getsize(dbpath) if os.path.exists(dbpath) else 0
+        walpath = dbpath + "-wal"
+        wal_size = os.path.getsize(walpath) if os.path.exists(walpath) else 0
+        up = int(time.time() - self.chat.started)
+
+        total_u = db.one("SELECT COUNT(*) n FROM users")["n"]
+        hist_rows = db.one("SELECT COUNT(*) n FROM history")["n"]
+        msg_rows = db.one("SELECT COUNT(*) n FROM messages")["n"]
+        cont_rows = db.one("SELECT COUNT(*) n FROM contacts")["n"]
+        audit_rows = db.one("SELECT COUNT(*) n FROM auditlog")["n"]
+
+        proc_mem = "-"
+        try:
+            r = resource.getrusage(resource.RUSAGE_SELF)
+            proc_mem = f"{r.ru_maxrss / 1024:.1f} MB"
+        except Exception:
+            pass
+
+        os_info = f"{platform.system()} {platform.release()} ({platform.machine()})"
+        py_ver = platform.python_version()
+        sqlite_ver = sqlite3.sqlite_version
+
+        tbody = ""
+        tbody += f'<div class="debug-row"><kbd>System</kbd><span>{os_info}</span></div>'
+        tbody += f'<div class="debug-row"><kbd>Python</kbd><span>{py_ver}</span></div>'
+        tbody += f'<div class="debug-row"><kbd>SQLite</kbd><span>{sqlite_ver}</span></div>'
+        tbody += f'<div class="debug-row"><kbd>Python-Memory</kbd><span>{proc_mem}</span></div>'
+        tbody += f'<div class="debug-row"><kbd>Uptime</kbd><span>{up//86400:02d}d {up%86400//3600:02d}h {up%3600//60:02d}m</span></div>'
+
+        tdbody = ""
+        tdbody += f'<div class="debug-row"><kbd>DB-Datei</kbd><span>{dbsize / 1024 / 1024:.2f} MB ({os.path.basename(dbpath)})</span></div>'
+        if wal_size:
+            tdbody += f'<div class="debug-row"><kbd>WAL</kbd><span>{wal_size / 1024:.1f} KB</span></div>'
+        tdbody += f'<div class="debug-row"><kbd>Eingetragene Benutzer</kbd><span>{total_u}</span></div>'
+        tdbody += f'<div class="debug-row"><kbd>History-Einträge</kbd><span>{hist_rows}</span></div>'
+        tdbody += f'<div class="debug-row"><kbd>Offline-Queue</kbd><span>{msg_rows}</span></div>'
+        tdbody += f'<div class="debug-row"><kbd>Kontakte</kbd><span>{cont_rows}</span></div>'
+        tdbody += f'<div class="debug-row"><kbd>Audit-Einträge</kbd><span>{audit_rows}</span></div>'
+
+        rows = db.all("""
+            SELECT id, nick, created, last_login, msg_count,
+                COALESCE(SELECT SUM(LENGTH(blob)) FROM history h2 WHERE h2.user_id = u.id, 0) AS hist_bytes
+            FROM users u ORDER BY last_login DESC NULLS LAST
+        """)
+
+        max_hist = max(r["hist_bytes"] for r in rows) if rows else 1
+        ubody = ""
+        for u in rows[-20:]:
+            pct = max(1, int(u["hist_bytes"] / max(max_hist, 1) * 100) if max_hist else 1)
+            lb = f'{u["hist_bytes"] / 1024:.1f} KB' if u["hist_bytes"] > 1024 else f'{u["hist_bytes"]} B'
+            ln_txt = self.ft(u["last_login"])
+            ubody += f"""<tr>
+                <td>{u['id']}</td><td><a href="/user/{u['id']}">{html.escape(u['nick'])}</a></td>
+                <td>{self.ft(u['created'])}</td><td>{ln_txt}</td>
+                <td>{u['msg_count']}</td><td>{lb}</td>
+                <td style="min-width:100px"><div class="progress-wrap"><div class="progress-bar" style="width:{pct}%"></div></div></td>
+            </tr>"""
+
+        return self.page("Debug", f"""
+<div class="card"><h3>System</h3>{tbody}</div>
+<div class="card"><h3>Datenbank</h3>{tdbody}</div>
+<div class="card"><h3>Top 20 – Speicherbedarf nach Nutzer</h3>
+<table><tr><th>ID</th><th>Nickname</th><th>Registriert</th><th>Letzter Login</th><th>Nachrichten</th><th>History-Größe</th><th>Laden</th></tr>{ubody}</table>
+</div>""", path="/debug")
 
     def app(self):
         a = web.Application(middlewares=[self.guard])
@@ -708,7 +797,7 @@ class AdminSite:
                       web.post("/user/{id}/action", self.user_action), web.get("/export.csv", self.export),
                       web.get("/broadcast", self.broadcast), web.post("/broadcast", self.broadcast_post),
                       web.get("/settings", self.settings), web.post("/settings", self.settings_post),
-                      web.get("/log", self.logpage)])
+                      web.get("/log", self.logpage), web.get("/debug", self.debugpage)])
         return a
 
 
