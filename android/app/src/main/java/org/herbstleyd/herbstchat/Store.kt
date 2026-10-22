@@ -15,7 +15,7 @@ import javax.crypto.spec.GCMParameterSpec
 const val DEFAULT_SERVER = ""   // eigene Serveradresse beim ersten Start eintragen
 const val DEFAULT_PORT = 47474
 const val WEBSITE = "https://herbstleyd.org"
-const val VERSION = "1.1.2"
+const val VERSION = "1.1.3"
 
 class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)

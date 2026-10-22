@@ -15,7 +15,7 @@ import ipaddress, json, logging, os, re, secrets, smtplib, sqlite3, ssl, sys, ti
 from email.message import EmailMessage
 from aiohttp import web, WSMsgType
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 DEFAULT_CONF = "/etc/herbstchat/server.conf"
 log = logging.getLogger("herbstchat")
 

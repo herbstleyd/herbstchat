@@ -1,6 +1,6 @@
 # Herbstchat @VERSION@
 
-Privater, Ende-zu-Ende-verschlüsselter Messenger.
+Privater, Ende-zu-Ende-verschlüsselter Messenger mit eigenem Server.
 
 ## Downloads
 
@@ -8,22 +8,26 @@ Privater, Ende-zu-Ende-verschlüsselter Messenger.
 |---|---|
 | `Herbstchat-@VERSION@.apk` | Android 8.0 oder neuer |
 | `Herbstchat-Windows.exe` | Windows 10/11 |
-| `Herbstchat-macOS.zip` | macOS 11+ (beim ersten Öffnen: Rechtsklick → „Öffnen“) |
+| `Herbstchat-macOS.zip` | macOS 11+ (beim ersten Öffnen: Rechtsklick, dann „Öffnen“) |
 | `Herbstchat-Linux-x86_64` | Linux x86_64 (`chmod +x` und starten) |
 | `herbstchat-server_@VERSION@_all.deb` | Server für Debian/Ubuntu, arm64 und amd64 |
 
-Die Clients brauchen kein installiertes Python. Server: `chat.example.org`, Port `47474`, ist schon voreingestellt.
+Die Clients brauchen kein installiertes Python. Beim ersten Start die Adresse des eigenen Servers eintragen (Standard-Port `47474`).
 
 ## Neu in dieser Version
 
-- **Chatverlauf wird über alle Geräte synchronisiert** – gesendete und empfangene Nachrichten, auch die auf anderen Geräten gesendeten (live)
-- Der Server speichert dafür nur den Chiffretext, Inhalte bleiben Ende-zu-Ende-verschlüsselt
-- Bestehender lokaler Verlauf wird beim ersten Start einmalig hochgeladen
-- „Verlauf löschen“ löscht jetzt auch auf dem Server (und damit auf allen Geräten)
-- Neues Admin-Web mit Seitenleiste und Debug-Seite
-- Dunkles Design als Standard
-- Behoben: Server-Login schlug mit 1.1.0/1.1.1 immer fehl, doppelte Verlaufseinträge, Debug-Seite
+- Neues Design in Blau (`#0066cc`) statt Orange, kühlere Farben im hellen und dunklen Design
+- Neue Akzentfarben: Herbstchat-Blau, Himmelblau, Petrol, Waldgrün, Violett, Ahorn-Rot
+- Keine voreingestellte Serveradresse mehr: Jeder trägt seinen eigenen Server ein
+- Server-Paket: `public_address` in `server.conf` ist leer; das TLS-Zertifikat wird auf diese Adresse oder den Rechnernamen ausgestellt
+- Ausführliche README, Lizenz 0BSD
 
-**Wichtig:** Server und alle Clients gemeinsam auf @VERSION@ aktualisieren. Clients 1.1.0 bitte nicht weiter verwenden.
+## Aus 1.1.2
+
+- Chatverlauf wird über alle Geräte synchronisiert, der Server speichert nur Chiffretext
+- „Verlauf löschen“ löscht auch auf dem Server und damit auf allen Geräten
+- Admin-Web mit Seitenleiste und Debug-Seite
+
+**Hinweis:** Server und Clients möglichst gemeinsam auf @VERSION@ aktualisieren. Bestehende Einstellungen (Serveradresse, Konto) bleiben erhalten.
 
 Installationsanleitung: siehe `INSTALLATION.md`.

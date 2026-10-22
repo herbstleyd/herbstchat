@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
     QSoundEffect = None
 
 APP = "Herbstchat"
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 DEFAULT_SERVER = ""          # eigene Serveradresse beim ersten Start eintragen
 DEFAULT_PORT = 47474
 WEBSITE = "https://herbstleyd.org"
