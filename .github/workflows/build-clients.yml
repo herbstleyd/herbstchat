@@ -62,11 +62,11 @@ jobs:
       - name: APK bauen
         working-directory: android
         env: { HC_KEYSTORE_PASSWORD: "${{ secrets.HC_KEYSTORE_PASSWORD }}" }
-        run: ./gradlew assembleRelease --no-daemon && cp app/build/outputs/apk/release/app-release.apk Herbstchat-1.1.0.apk
+        run: ./gradlew assembleRelease --no-daemon && cp app/build/outputs/apk/release/app-release.apk Herbstchat-1.1.1.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Herbstchat-Android
-          path: android/Herbstchat-1.1.0.apk
+          path: android/Herbstchat-1.1.1.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
